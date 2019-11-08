@@ -1,0 +1,5 @@
+*.pyc
+.idea/
+core/install_location.yml
+core/pipeline_configuration.yml
+tk-metadata/
