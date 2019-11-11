@@ -34,7 +34,8 @@ apps.tk-multi-about.location:
 apps.tk-multi-breakdown.location:
   type: git
   branch: master
-  path: http://gitlab.anime.com/huangsheng/tk-multi-breakdown.git
+  # path: http://gitlab.anime.com/huangsheng/tk-multi-breakdown.git
+  path: https://github.com/DiLinTian/tk-multi-breakdown.git
   version: v1.5.0.1
 
 # demo
@@ -111,7 +112,8 @@ apps.tk-multi-workfiles.location:
 apps.tk-multi-workfiles2.location:
   type: git
   branch: master
-  path: http://gitlab.anime.com/huangsheng/tk-multi-workfiles2.git
+  # path: http://gitlab.anime.com/huangsheng/tk-multi-workfiles2.git
+  path: https://github.com/DiLinTian/tk-multi-workfiles2.git
   version: v0.11.8.1
 
 # dev utils
@@ -204,11 +206,11 @@ apps.tk-mari-projectmanager.location:
   type: app_store
   version: v1.2.1
 
-apps.tk-cfaloader-app.location:
-  type: git
-  version: v1.0.0
-  branch: master
-  path: http://gitlab.anime.com/huangsheng/tk-cfaloader-app.git
+# apps.tk-cfaloader-app.location:
+#   type: git
+#   version: v1.0.0
+#   branch: master
+#   path: http://gitlab.anime.com/huangsheng/tk-cfaloader-app.git
 
 ################################################################################
 # reference all of the common frameworks

@@ -63,5 +63,6 @@ frameworks:
 
       type: git
       branch: master
-      path: http://gitlab.anime.com/huangsheng/tk-framework-unrealqt.git
+      # path: http://gitlab.anime.com/huangsheng/tk-framework-unrealqt.git
+      path: https://github.com/DiLinTian/tk-framework-unrealqt.git
       version: v1.0.0

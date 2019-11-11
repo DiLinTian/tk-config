@@ -53,7 +53,8 @@ engines.tk-mari.location:
 engines.tk-maya.location:
   type: git
   branch: master
-  path: http://gitlab.anime.com/huangsheng/tk-maya.git
+  # path: http://gitlab.anime.com/huangsheng/tk-maya.git
+  path: https://github.com/DiLinTian/tk-maya.git
   version: v0.9.4.1
 
 # Motion Builder
