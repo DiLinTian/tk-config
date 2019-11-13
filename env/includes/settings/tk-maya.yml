@@ -106,8 +106,8 @@ settings.tk-maya.shot_step:
       location: "@apps.tk-multi-breakdown.location"
     tk-multi-setframerange:
       location: "@apps.tk-multi-setframerange.location"
-    tk-cfaloader-app:
-      location: "@apps.tk-cfaloader-app.location"
+    # tk-cfaloader-app:
+    #   location: "@apps.tk-cfaloader-app.location"
     tk-multi-loader2: "@settings.tk-multi-loader2.maya"
     tk-multi-publish2: "@settings.tk-multi-publish2.maya.shot_step"
     tk-multi-screeningroom: "@settings.tk-multi-screeningroom.rv"
