@@ -206,11 +206,11 @@ apps.tk-mari-projectmanager.location:
   type: app_store
   version: v1.2.1
 
-# apps.tk-cfaloader-app.location:
-#   type: git
-#   version: v1.0.0
-#   branch: master
-#   path: http://gitlab.anime.com/huangsheng/tk-cfaloader-app.git
+ apps.tk-cfa-loader-app.location:
+   type: git
+   version: v1.0.0
+   branch: master
+   path: https://github.com/DiLinTian/tk-cfa-loader-app.git
 
 ################################################################################
 # reference all of the common frameworks
