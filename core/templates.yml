@@ -40,7 +40,13 @@ keys:
     name:
         type: str
         filter_by: alphanumeric
+    xgcollection:
+        type: str
+    CamName:
+        type: str
     specialname:
+        type: str
+    xgfilename:
         type: str
     iteration:
         type: int
@@ -246,7 +252,7 @@ paths:
     maya_shot_publish:
         definition: '@shot_root/publish/maya/{name}_{Step}.v{version}.{maya_extension}'
     maya_shot_camera_publish:
-        definition: '@shot_root/publish/maya/cameras/{name}_{Step}.v{version}.abc'
+        definition: '@shot_root/publish/maya/cameras/{CamName}_{Step}.v{version}.ma'
 
 
     #
@@ -438,11 +444,14 @@ paths:
         definition: '@asset_root/publish/maya/{name}_{Step}.v{version}.{maya_extension}'
     maya_shader_network_publish:
         definition: '@asset_root/publish/maya/shader/{name}_{Step}_shader.v{version}.{maya_extension}'
-
     maya_uvmap_publish:
         definition: '@asset_root/publish/maya/uvmap/{specialname}_{Step}.v{version}.tif'
-
-
+    maya_xgen_publish:
+        definition: '@asset_root/publish/maya/xgen/collections/v{version}/{xgfilename}.xgen'
+    maya_xgshader_publish:
+      definition: '@asset_root/publish/maya/xgshader/{xgcollection}_{Step}_shader.v{version}.{maya_extension}'
+    maya_xggeometry_publish:
+        definition: '@asset_root/publish/maya/xggeometry/{name}_{Step}.v{version}.{maya_extension}'
     #
     # Houdini
     #

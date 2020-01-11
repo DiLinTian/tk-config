@@ -77,10 +77,14 @@ class MayaSessionCollector(HookBaseClass):
         # create an item representing the current maya session
         item = self.collect_current_maya_session(settings, parent_item)
         project_root = item.properties["project_root"]
+        context = item.context
 
+        self.logger.debug("collector:session----%s----" % context)
+        self.logger.debug("collector:session----%s----" % context.task)
         # look at the render layers to find rendered images on disk
         self.collect_rendered_images(item)
-
+        step_id = context.step.get('id')
+        self.logger.debug("step_id:---%s---" % step_id)
         # if we can determine a project root, collect other files to publish
         if project_root:
 
@@ -97,6 +101,10 @@ class MayaSessionCollector(HookBaseClass):
 
             self.collect_playblasts(item, project_root)
             self.collect_alembic_caches(item, project_root)
+            if step_id == 138:
+                self._collect_xgen(item, project_root)
+                self._collect_xgen_shader(item)
+                self._collect_xgen_geometry(item)
         else:
 
             self.logger.info(
@@ -109,13 +117,17 @@ class MayaSessionCollector(HookBaseClass):
                     }
                 }
             )
+        if step_id !=138:
+            if cmds.ls(geometry=True, noIntermediate=True):
+                self._collect_session_geometry(item)
 
-        if cmds.ls(geometry=True, noIntermediate=True):
-            self._collect_session_geometry(item)
 
-        self._collect_meshes(item)
-        self._collect_cameras(item)
-        self._collect_uvmap(item)
+        if step_id in [106,35]:
+            self._collect_cameras(item)
+        if step_id in[15,16]:
+            self._collect_meshes(item)
+            self._collect_uvmap(item)
+
 
     def collect_current_maya_session(self, settings, parent_item):
         """
@@ -302,29 +314,37 @@ class MayaSessionCollector(HookBaseClass):
         )
 
         # look for movie files in the movies folder
+        # get max version file:
+        import re
+        version = 0
+        max_file = ""
+        pattern = "\w+_[A-Za-z]+\.v\d+\.mov"
+        pattern2 = "\w+_[A-Za-z]+\.v(\d+)\.mov"
         for filename in os.listdir(movies_dir):
-
-            # do some early pre-processing to ensure the file is of the right
-            # type. use the base class item info method to see what the item
-            # type would be.
             item_info = self._get_item_info(filename)
             if item_info["item_type"] != "file.video":
                 continue
+            if re.match(pattern, filename):
+                num = int(re.findall(pattern2,filename)[0])
+                if num >version:
+                    version = num
+                    max_file = filename
 
-            movie_path = os.path.join(movies_dir, filename)
+        if not max_file:
+            return
+        max_file_path = os.path.join(movies_dir,max_file)
 
-            # allow the base class to collect and create the item. it knows how
-            # to handle movie files
-            item = super(MayaSessionCollector, self)._collect_file(
-                parent_item,
-                movie_path
-            )
+        item = super(MayaSessionCollector, self)._collect_file(
+            parent_item,
+            max_file_path
+        )
 
-            # the item has been created. update the display name to include
-            # the an indication of what it is and why it was collected
-            item.name = "%s (%s)" % (item.name, "playblast")
-            item._expanded = False
-            item._active = False
+        # the item has been created. update the display name to include
+        # the an indication of what it is and why it was collected
+        item.name = os.path.splitext(max_file)[0]
+        item.name = "%s (%s)" % (item.name, "playblast")
+        item._expanded = False
+        # item._active = False
 
     def collect_rendered_images(self, parent_item):
         """
@@ -397,8 +417,7 @@ class MayaSessionCollector(HookBaseClass):
 
         # iterate over all top-level transforms and create mesh items
         # for any mesh.
-        engine = sgtk.platform.current_engine()
-        context = engine.context
+        context = parent_item.context
 
         for object in cmds.ls(assemblies=True):
 
@@ -444,6 +463,7 @@ class MayaSessionCollector(HookBaseClass):
         # location refers to the path of this hook file. this means that
         # the icon should live one level above the hook in an "icons"
         # folder.
+
         self.logger.debug("Camera publish...")
         icon_path = os.path.join(
             self.disk_location,
@@ -520,6 +540,128 @@ class MayaSessionCollector(HookBaseClass):
 
                 uv_item._expanded = False
                 # uv_item._active = False
+
+    def _collect_xgen(self,parent_item, project_root):
+
+        try:
+            import xgenm as xg
+        except Exception,e:
+            self.logger.debug(e)
+            return
+        self.logger.debug("XGen publish...")
+        icon_path = os.path.join(
+            self.disk_location,
+            os.pardir,
+            "icons",
+            "xgen.png"
+        )
+        # check xgmPalette node in scene
+        collections = xg.palettes()
+        if not collections:
+            return
+        xgen_dir_name = "xgen/collections"
+        xgen_dir = os.path.join(project_root, xgen_dir_name)
+        if not os.path.exists(xgen_dir):
+            return
+
+        self.logger.info(
+            "Processing xgen folder: %s" % (xgen_dir,),
+            extra={
+                "action_show_folder": {
+                    "path": xgen_dir
+                }
+            }
+        )
+        for collection in collections:
+            collection_path = os.path.join(xgen_dir, collection)
+            self.logger.debug("collection:%s"%collection)
+            if not os.path.isdir(collection_path):
+                continue
+            xgen_item = parent_item.create_item(
+                "maya.session.xgen",
+                "XGen",
+                collection
+            )
+
+            # xgen_item.name = "%s (%s)" % (xgen_item.name, "XGen")
+            xgen_item.set_icon_from_path(icon_path)
+            xgen_item.properties['collection_path'] = collection_path
+            xgen_item.properties['collection'] = collection
+
+            xgen_item._expanded = False
+            # item._active = False
+
+    def _collect_xgen_shader(self, parent_item):
+        try:
+            import xgenm as xg
+        except Exception,e:
+            self.logger.debug(e)
+            return
+        icon_path = os.path.join(
+            self.disk_location,
+            os.pardir,
+            "icons",
+            "mesh.png"
+        )
+
+        engine = sgtk.platform.current_engine()
+        context = engine.context
+
+        if context.step.get("id") == 138:
+
+            for collection in xg.palettes():
+
+                xgen_item = parent_item.create_item(
+                    "maya.session.xgshader",
+                    "XGen Shader",
+                    collection+"_Shader"
+                )
+                # set the icon for the item
+                xgen_item.set_icon_from_path(icon_path)
+
+                xgen_item.properties["collection"] = collection
+
+                xgen_item._expanded = False
+                xgen_item._active = True
+
+    def _collect_xgen_geometry(self,parent_item):
+        try:
+            import xgenm as xg
+        except Exception,e:
+            self.logger.debug(e)
+            return
+        icon_path = os.path.join(
+            self.disk_location,
+            os.pardir,
+            "icons",
+            "geometry.png"
+        )
+        engine = sgtk.platform.current_engine()
+        context = engine.context
+
+        if context.step.get("id") == 138:
+            collection = xg.palettes()[0]
+            xg_geometry = set()
+            for descriptions in xg.descriptions(collection):
+                geometry = xg.boundGeometry(collection,descriptions)
+                for geo in geometry :
+                    xg_geometry.add(geo)
+            _geometry = list(xg_geometry)
+            self.logger.debug("XGen Geometry:%s"%_geometry)
+            for geo in list(_geometry):
+                xgen_item = parent_item.create_item(
+                    "maya.session.xggeometry",
+                    "XGen Geometry",
+                    geo
+                )
+                # set the icon for the item
+                xgen_item.set_icon_from_path(icon_path)
+
+                xgen_item.properties["geometry"] = geo
+
+                xgen_item._expanded = False
+                xgen_item._active = True
+
 def getCurrentShotName(scene_path):
     '''
 

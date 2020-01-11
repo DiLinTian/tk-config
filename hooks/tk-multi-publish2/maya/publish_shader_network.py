@@ -137,53 +137,6 @@ class MayaShaderPublishPlugin(HookBaseClass):
     # Publish processing methods
 
     def accept(self, settings, item):
-        """
-        This method is called by the publisher to see if the plugin accepts the
-        supplied item for processing.
-
-        Only items matching the filters defined via the :data:`item_filters`
-        property will be presented to this method.
-
-        A publish task will be generated for each item accepted here.
-
-        This method returns a :class:`dict` of the following form::
-
-            {
-                "accepted": <bool>,
-                "enabled": <bool>,
-                "visible": <bool>,
-                "checked": <bool>,
-            }
-
-        The keys correspond to the acceptance state of the supplied item. Not
-        all keys are required. The keys are defined as follows:
-
-        * ``accepted``: Indicates if the plugin is interested in this value at all.
-          If ``False``, no task will be created for this plugin. Required.
-        * ``enabled``: If ``True``, the created task will be enabled in the UI,
-          otherwise it will be disabled (no interaction allowed). Optional,
-          ``True`` by default.
-        * ``visible``: If ``True``, the created task will be visible in the UI,
-          otherwise it will be hidden. Optional, ``True`` by default.
-        * ``checked``: If ``True``, the created task will be checked in the UI,
-          otherwise it will be unchecked. Optional, ``True`` by default.
-
-        In addition to the item, the configured settings for this plugin are
-        supplied. The information provided by each of these arguments can be
-        used to decide whether to accept the item.
-
-        For example, the item's ``properties`` :class:`dict` may house meta data
-        about the item, populated during collection. This data can be used to
-        inform the acceptance logic.
-
-        :param dict settings: The keys are strings, matching the keys returned
-            in the :data:`settings` property. The values are
-            :class:`~.processing.Setting` instances.
-        :param item: The :class:`~.processing.Item` instance to process for
-            acceptance.
-
-        :returns: dictionary with boolean keys accepted, required and enabled
-        """
 
         # by default we will accept the item. if any of the checks below fail,
         # we'll set this to False.
@@ -251,7 +204,6 @@ class MayaShaderPublishPlugin(HookBaseClass):
         """
 
         path = _session_path()
-
         # ---- ensure the session has been saved
 
         if not path:
@@ -335,6 +287,8 @@ class MayaShaderPublishPlugin(HookBaseClass):
         """
 
         publisher = self.parent
+        # self.logger.debug("ppcontext:----%s----" % item.context)
+        # self.logger.debug("pptask:----%s----" % item.context.task)
 
         # get the path to create and publish
         publish_path = item.properties["path"]
@@ -343,25 +297,34 @@ class MayaShaderPublishPlugin(HookBaseClass):
         publish_folder = os.path.dirname(publish_path)
         publisher.ensure_folder_exists(publish_folder)
         mesh_object = item.properties["object"]
-        
 
         # now just export shaders for this item to the publish path. there's
         # probably a better way to do this.
+
         shading_groups = set()
         shad_group_to_obj = {}
+        def_shader = "initialShadingGroup"
         # print "mesh:",mesh_object
         if cmds.ls(mesh_object, dag=True, type="mesh"):
             faces = cmds.polyListComponentConversion(mesh_object, toFace=True)
             for face in faces:
-                for shading_group in cmds.listSets(type=1, object=face):
-                    shading_groups.add(shading_group)       
-                    element = cmds.listAttr("%s.dagSetMembers"%(shading_group),m = True)
-                    for ele in element:    
-                        obj = cmds.listConnections("%s.%s"%(shading_group,ele)) 
-                        if not obj:
+                _groups = cmds.listSets(type=1, object=face)
+                if not _groups:
+                    current_object = face.split(".")[0]
+                    cmds.select(current_object, r=True)
+                    cmds.hyperShade(assign=def_shader)
+                    _groups = [def_shader]
+                for shading_group in _groups:
+                    shading_groups.add(shading_group)
+                    element = cmds.listAttr("%s.dagSetMembers" % (shading_group),
+                                            m=True)  # dagSetMembers[0],dagSetMembers[1]
+                    for ele in element:
+                        connection_obj = cmds.listConnections("%s.%s" % (shading_group, ele))
+                        if not connection_obj:
                             continue
-                        for o in obj:                         
-                            shad_group_to_obj.setdefault(shading_group,set()).add(o)
+                        for obj in connection_obj:
+                            long_name = cmds.ls(obj, l=True)[0]
+                            shad_group_to_obj.setdefault(shading_group, set()).add(long_name)
         # print "group:",shad_group_to_obj
         shaders = set()
         script_nodes = []
@@ -374,18 +337,20 @@ class MayaShaderPublishPlugin(HookBaseClass):
             for shader in cmds.ls(connections, materials=True):
                 # print "shader:", shader
                 shaders.add(shader)
-                obj_name = list(shad_group_to_obj[shading_group])
-                for onm in obj_name:
+                objects = list(shad_group_to_obj[shading_group])
+                for obj in objects:
 
                     # get rid of namespacing
-                    obj_parts = onm.split(":")
+                    if obj.startswith("|"):
+                        obj = obj[1:]
 
-                    # can't seem to store arbitrary data in maya in any
-                    # reasonable way. would love to know a better way to
-                    # do this. for now, just create a script node that
-                    # we can easily find and deduce an object name and
-                    # shader name. Yes, this is hacky.
-                    script_node_name = "SHADER_HOOKUP_" + obj_parts[-1]
+                    # get real name
+                    name = []
+                    sp_name_space = obj.split("|")
+                    for ns in sp_name_space:
+                        name.append(ns.split(":")[-1])
+                    obj_parts = '|'.join(name)
+                    script_node_name = "SHADER_HOOKUP_" + obj_parts#[-1]
                     script_node = cmds.scriptNode(
                         name=script_node_name,
                         scriptType=0,  # execute on demand.
@@ -469,3 +434,113 @@ def _clean_shader_hookup_script_nodes():
     for node in cmds.ls(type="script"):
         if node.startswith(hookup_prefix):
             cmds.delete(node)
+
+# def publish(self, settings, item):
+#     """
+#     Executes the publish logic for the given item and settings.
+#
+#     Any raised exceptions will indicate that the publish pass has failed and
+#     the publisher will stop execution.
+#
+#     :param dict settings: The keys are strings, matching the keys returned
+#         in the :data:`settings` property. The values are
+#         :class:`~.processing.Setting` instances.
+#     :param item: The :class:`~.processing.Item` instance to validate.
+#     """
+#
+#     publisher = self.parent
+#     self.logger.debug("ppcontext:----%s----" % item.context)
+#     self.logger.debug("pptask:----%s----" % item.context.task)
+#
+#     # get the path to create and publish
+#     publish_path = item.properties["path"]
+#
+#     # ensure the publish folder exists:
+#     publish_folder = os.path.dirname(publish_path)
+#     publisher.ensure_folder_exists(publish_folder)
+#     mesh_object = item.properties["object"]
+#
+#     # now just export shaders for this item to the publish path. there's
+#     # probably a better way to do this.
+#     shading_groups = set()
+#     shad_group_to_obj = {}
+#     def_shader = "initialShadingGroup"
+#     # print "mesh:",mesh_object
+#     if cmds.ls(mesh_object, dag=True, type="mesh"):
+#         faces = cmds.polyListComponentConversion(mesh_object, toFace=True)
+#         for face in faces:
+#             _groups = cmds.listSets(type=1, object=face)
+#             if not _groups:
+#                 current_object = face.split(".")[0]
+#                 cmds.select(current_object, r=True)
+#                 cmds.hyperShade(assign=def_shader)
+#                 _groups = [def_shader]
+#             for shading_group in _groups:
+#                 shading_groups.add(shading_group)
+#                 element = cmds.listAttr("%s.dagSetMembers" % (shading_group), m=True)
+#                 for ele in element:
+#                     obj = cmds.listConnections("%s.%s" % (shading_group, ele))
+#                     if not obj:
+#                         continue
+#                     for o in obj:
+#                         shad_group_to_obj.setdefault(shading_group, set()).add(o)
+#     # print "group:",shad_group_to_obj
+#     shaders = set()
+#     script_nodes = []
+#     for shading_group in list(shading_groups):
+#         connections = cmds.listConnections(
+#             shading_group,
+#             source=True,
+#             destination=False
+#         )
+#         for shader in cmds.ls(connections, materials=True):
+#             # print "shader:", shader
+#             shaders.add(shader)
+#             obj_name = list(shad_group_to_obj[shading_group])
+#             for onm in obj_name:
+#                 # get rid of namespacing
+#                 obj_parts = onm.split(":")
+#
+#                 # can't seem to store arbitrary data in maya in any
+#                 # reasonable way. would love to know a better way to
+#                 # do this. for now, just create a script node that
+#                 # we can easily find and deduce an object name and
+#                 # shader name. Yes, this is hacky.
+#                 script_node_name = "SHADER_HOOKUP_" + obj_parts[-1]
+#                 script_node = cmds.scriptNode(
+#                     name=script_node_name,
+#                     scriptType=0,  # execute on demand.
+#                     beforeScript=shader,
+#                 )
+#                 # print "script_node:",script_node
+#                 script_nodes.append(script_node)
+#
+#     if not shaders:
+#         self.logger.debug("No shader network found to export and publish.")
+#         return
+#
+#     select_nodes = list(shaders)
+#     select_nodes.extend(script_nodes)
+#
+#     cmds.select(select_nodes, replace=True)
+#     self.logger.debug("shader_node:%s" % select_nodes)
+#     # write .ma file to the publish path with the shader network definitions
+#     cmds.file(
+#         publish_path,
+#         type='mayaAscii',
+#         exportSelected=True,
+#         options="v=0",
+#         prompt=False,
+#         force=True
+#     )
+#
+#     # clean up shader hookup nodes. they should exist in publish file only
+#     _clean_shader_hookup_script_nodes()
+#
+#     # set the publish type in the item's properties. the base plugin will
+#     # use this when registering the file with Shotgun
+#     item.properties["publish_type"] = "Maya Shader Network"
+#
+#     # Now that the path has been generated, hand it off to the base publish
+#     # plugin to do all the work to register the file with SG
+#     super(MayaShaderPublishPlugin, self).publish(settings, item)

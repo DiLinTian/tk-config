@@ -323,29 +323,50 @@ class MayaUVMapPublishPlugin(HookBaseClass):
         uvmap_path = ''
         # print "publish_path:",publish_path
         # \\3par\ibrix01\shotgun\shotgun_work\tdprojects\sequences\sc001\sh003\LAY\publish\maya\cameras\camMain_LAY.v006.abc
-        if publish_path.startswith("\\"):
-            sp = publish_path.split('\\')
-            sp.pop(0)
-            root = "//" + sp[0]
-            temp_path = '/'.join(sp[1:])
-            if "\t" in temp_path:
-                temp_path = temp_path.replace('\t', '/t')
-            uvmap_path = os.path.join(root, temp_path)
-            uvmap_path = uvmap_path.replace("\\", '/')
-        else:
-            if "\t" in publish_path:
-                temp_path = publish_path.replace('\t', '/t')
-                uvmap_path = temp_path.replace(os.path.sep, '/')
+        # if publish_path.startswith("\\"):
+        #     sp = publish_path.split('\\')
+        #     sp.pop(0)
+        #     root = "//" + sp[0]
+        #     temp_path = '/'.join(sp[1:])
+        #     if "\t" in temp_path:
+        #         temp_path = temp_path.replace('\t', '/t')
+        #     uvmap_path = os.path.join(root, temp_path)
+        #     uvmap_path = uvmap_path.replace("\\", '/')
+        # else:
+        #     if "\t" in publish_path:
+        #         temp_path = publish_path.replace('\t', '/t')
+        #         uvmap_path = temp_path.replace(os.path.sep, '/')
+
+        publish_path = replaceSpecialCharacter(publish_path)
+        self.logger.info("A Publish will be created in Shotgun and linked to:")
+        self.logger.info("  %s" % (publish_path))
         _format = "tif"
         _xr=_yr = 2048
-        cmds.uvSnapshot(uvmap_name,o = True,ff = _format,xr = _xr,yr = _yr,aa = True,n = uvmap_path)
+        cmds.uvSnapshot(uvmap_name,o = True,ff = _format,xr = _xr,yr = _yr,aa = True,n = publish_path)
         item.properties["publish_type"] = "Image"
 
         # Now that the path has been generated, hand it off to the
         super(MayaUVMapPublishPlugin, self).publish(settings, item)
 
 
-
+def replaceSpecialCharacter(strings):
+    if "\a" in strings:
+        strings = strings.replace("\a", "/a")
+    if "\b" in strings:
+        strings = strings.replace("\b", "/b")
+    if "\e" in strings:
+        strings = strings.replace("\e", "/e")
+    if "\n" in strings:
+        strings = strings.replace("\n", "/n")
+    if "\v" in strings:
+        strings = strings.replace("\v", "/v")
+    if "\r" in strings:
+        strings = strings.replace("\r", "/r")
+    if "\t" in strings:
+        strings = strings.replace("\t", "/t")
+    if "\f" in strings:
+        strings = strings.replace("\f", "/f")
+    return strings.replace("\\","/")
 
 
 def _session_path():

@@ -230,12 +230,12 @@ class MayaCameraPublishPlugin(HookBaseClass):
             return {"accepted": False}
 
         # check that the FBXExport command is available!
-        if not mel.eval("exists \"FBXExport\""):
-            self.logger.debug(
-                "Item not accepted because fbx export command 'FBXExport' "
-                "is not available. Perhaps the plugin is not enabled?"
-            )
-            return {"accepted": False}
+        # if not mel.eval("exists \"FBXExport\""):
+        #     self.logger.debug(
+        #         "Item not accepted because fbx export command 'FBXExport' "
+        #         "is not available. Perhaps the plugin is not enabled?"
+        #     )
+        #     return {"accepted": False}
 
         # all good!
         return {
@@ -303,7 +303,8 @@ class MayaCameraPublishPlugin(HookBaseClass):
         work_fields = work_template.get_fields(path)
 
         # include the camera name in the fields
-        work_fields["name"] = cam_name
+        # work_fields["name"] = cam_name
+        work_fields["CamName"] = cam_name
 
         # ensure the fields work for the publish template
         missing_keys = publish_template.missing_keys(work_fields)
@@ -360,32 +361,33 @@ class MayaCameraPublishPlugin(HookBaseClass):
         
         # get camera frame range
         camera_name = item.properties['camera_name']
-        min,max = _find_scene_animation_range()
+        # min,max = _find_scene_animation_range()
         # fbx_export_cmd = 'FBXExport -f "%s" -s' % (publish_path.replace(os.path.sep, "/"),)
         # print "publish path:",publish_path.replace(os.path.sep, "/")
-        camera_path = ''
-        # print "publish_path:",publish_path 
-        # \\3par\ibrix01\shotgun\shotgun_work\tdprojects\sequences\sc001\sh003\LAY\publish\maya\cameras\camMain_LAY.v006.abc
-        if publish_path.startswith("\\"):
-            sp = publish_path.split('\\')
-            sp.pop(0)
-            root = "//" + sp[0]
-            temp_path = '/'.join(sp[1:])
-            if "\t" in temp_path:
-                temp_path = temp_path.replace('\t','/t')
-            camera_path = os.path.join(root,temp_path)
-            camera_path = camera_path.replace("\\",'/')
-        else:
-            if "\t" in publish_path:
-                temp_path = publish_path.replace('\t','/t')
-                camera_path = temp_path.replace(os.path.sep,'/')
-        # print "publish_camera:",camera_path
-        cam_export_cmd = 'AbcExport -j "-frameRange {min} {max} -dataFormat ogawa -root {name} -file {file}";'.format(
-                                                                                    min = min,
-                                                                                    max = max,
-                                                                                    name = camera_name,
-                                                                                    file = camera_path
-                                                                                        )
+        # camera_path = ''
+        # # print "publish_path:",publish_path
+        # # \\3par\ibrix01\shotgun\shotgun_work\tdprojects\sequences\sc001\sh003\LAY\publish\maya\cameras\camMain_LAY.v006.abc
+        # if publish_path.startswith("\\"):
+        #     sp = publish_path.split('\\')
+        #     sp.pop(0)
+        #     root = "//" + sp[0]
+        #     temp_path = '/'.join(sp[1:])
+        #     if "\t" in temp_path:
+        #         temp_path = temp_path.replace('\t','/t')
+        #     camera_path = os.path.join(root,temp_path)
+        #     camera_path = camera_path.replace("\\",'/')
+        # else:
+        #     if "\t" in publish_path:
+        #         temp_path = publish_path.replace('\t','/t')
+        #         camera_path = temp_path.replace(os.path.sep,'/')
+        # # print "publish_camera:",camera_path
+        # cam_export_cmd = 'AbcExport -j "-frameRange {min} {max} -dataFormat ogawa -root {name} -file {file}";'.format(
+        #                                                                             min = min,
+        #                                                                             max = max,
+        #                                                                             name = camera_name,
+        #                                                                             file = camera_path
+        #                                                                                 )
+
 
 
         # ...and execute it:
@@ -396,8 +398,10 @@ class MayaCameraPublishPlugin(HookBaseClass):
         #     self.logger.error("Failed to export camera: %s" % e)
         #     return
         try:
-            self.logger.debug("Executing command: %s" % cam_export_cmd)
-            mel.eval(cam_export_cmd)
+            # self.logger.debug("Executing command: %s" % cam_export_cmd)
+            # mel.eval(cam_export_cmd)
+            cmds.select(camera_name, r=True)
+            cmds.file(publish_path, force=True, options="v=0", typ="mayaAscii", pr=True, es=True)
         except Exception, e:
             self.logger.error("Failed to export camera: %s" % e)
             return
@@ -406,8 +410,9 @@ class MayaCameraPublishPlugin(HookBaseClass):
         # use this when registering the file with Shotgun
         # item.properties["publish_type"] = "FBX Camera"
         
-        item.properties["publish_type"] = "ABC Camera"
-        
+        # item.properties["publish_type"] = "ABC Camera"
+        item.properties["publish_type"] = "MAYA Camera"
+
         # Now that the path has been generated, hand it off to the
         super(MayaCameraPublishPlugin, self).publish(settings, item)
 

@@ -226,6 +226,18 @@ settings.tk-multi-publish2.maya.asset_step:
     hook: "{self}/publish_file.py:{config}/tk-multi-publish2/maya/publish_uvmap.py"
     settings:
       Publish Template: maya_uvmap_publish
+  - name: Publish XGen
+    hook: "{self}/publish_file.py:{config}/tk-multi-publish2/maya/publish_xgen.py"
+    settings:
+      Publish Template: maya_xgen_publish
+  - name: Publish XGen Shader
+    hook: "{self}/publish_file.py:{config}/tk-multi-publish2/maya/publish_xgen_shader.py"
+    settings:
+      Publish Template: maya_xgshader_publish
+  - name: Publish XGen Geometry
+    hook: "{self}/publish_file.py:{config}/tk-multi-publish2/maya/publish_xgen_geometry.py"
+    settings:
+      Publish Template: maya_xggeometry_publish
   help_url: *help_url
   location: "@apps.tk-multi-publish2.location"
 
@@ -253,7 +265,7 @@ settings.tk-multi-publish2.maya.shot_step:
     hook: "{self}/publish_file.py:{config}/tk-multi-publish2/maya/publish_camera.py"
     settings:
         Publish Template: maya_shot_camera_publish
-        Cameras: [cam*]
+        Cameras: [Cam*]
   help_url: *help_url
   location: "@apps.tk-multi-publish2.location"
 

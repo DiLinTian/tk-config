@@ -184,28 +184,49 @@ class MayaActions(HookBaseClass):
         :param path: Path to file.
         :param sg_publish_data: Shotgun data dictionary with all the standard publish fields.
         """
+        # return
+        app = self.parent
+        app.logger.debug("reference_path:%s"%path)
         if not os.path.exists(path):
             raise Exception("File not found on disk - '%s'" % path)
         
         # make a name space out of entity name + publish name
         # e.g. bunny_upperbody
         # namespace = "%s %s" % (sg_publish_data.get("entity").get("name"), sg_publish_data.get("name"))
-        namespace = (sg_publish_data.get('name').split(".")[0])
+        if _hookup_sim_crv(path):
+            return
+        name = sg_publish_data.get('name')
+        namespace = (name.split(".")[0])
         namespace = namespace.replace(" ", "_")
-
+        published_file_type = sg_publish_data.get('published_file_type').get('name')
         # print sg_publish_data
-        pm.system.createReference(path, 
-                                  loadReferenceDepth= "all", 
-                                  mergeNamespacesOnClash=False, 
+
+        pm.system.createReference(path,
+                                  loadReferenceDepth= "all",
+                                  mergeNamespacesOnClash=False,
                                   namespace=namespace)
 
-        reference_node = cmds.referenceQuery(path, referenceNode=True)
+        cmds.referenceQuery(path, referenceNode=True)
 
         # give material if file type is maya shader 
         shader_type = "Maya Shader Network"
-        published_file_type = sg_publish_data.get('published_file_type').get('name')
+
         if published_file_type == shader_type:
-            _hookup_shaders(reference_node)
+            _hookup_shaders("SHADER_HOOKUP_","mesh")
+        xgshader_type = "MAYA XGShader"
+        if published_file_type == xgshader_type:
+            filename = os.path.basename(path)
+            if not re.search("_GRM",filename):
+                cmds.file(path,rr = True)
+                raise Exception("XGen shader file name error!")
+            collection = filename.split("_GRM")[0]
+            if not cmds.objExists(collection):
+                cmds.file(path, rr=True)
+                raise Exception("%s dose not exists!"%collection)
+            _hookup_shaders("XGSHADER_HOOKUP_","xgmDescription",str(collection))
+            return
+
+
 
     def _do_import(self, path, sg_publish_data):
         """
@@ -221,12 +242,21 @@ class MayaActions(HookBaseClass):
         # make a name space out of entity name + publish name
         # e.g. bunny_upperbody                
         # namespace = "%s %s" % (sg_publish_data.get("entity").get("name"), sg_publish_data.get("name"))
+        if _hookup_sim_crv(path):
+            return
+        published_file_type = sg_publish_data.get('published_file_type').get('name')
+        xgen_type = "Maya XGen"
+        if published_file_type == xgen_type:
+            _hookup_xgen(path)
+            return
+
         namespace = (sg_publish_data.get('name').split(".")[0])
         namespace = namespace.replace(" ", "_")
-        
+        if published_file_type == "MAYA XGGeometry":
+            namespace = ":"
         # perform a more or less standard maya import, putting all nodes brought in into a specific namespace
         cmds.file(path, i=True, renameAll=True, namespace=namespace, loadReferenceDepth="all", preserveReferences=True)
-            
+
     def _create_texture_node(self, path, sg_publish_data):
         """
         Create a file texture node for a texture
@@ -262,9 +292,11 @@ class MayaActions(HookBaseClass):
         if file_type == 'Texture Folder':
             return self._create_texture_nodes_byfolder(path,sg_publish_data)
         return self._create_texture_node_func(path,sg_publish_data)
+
     def _create_texture_node_func(self,path,sg_publish_data):
 
-        file_node = cmds.shadingNode('file', asTexture=True)
+        # file_node = cmds.shadingNode('file', asTexture=True)
+        file_node = mel.eval('createRenderNodeCB -as2DTexture "" "file" "";')
         cmds.setAttr("%s.fileTextureName" % file_node, path, type="string")
         return file_node
 
@@ -283,8 +315,21 @@ class MayaActions(HookBaseClass):
             cmds.setAttr("%s.uvTilingMode" % file_node, 3)
             # ---------set preview quality-----:
             cmds.setAttr("%s.uvTileProxyQuality" % file_node, 4)
+            # set color space
+            srgb_color = ["Diffuse","Reflection"]
+            raw_color = ["Glossiness","IOR","Normal"]
+            for srgb in srgb_color:
+                if re.search(srgb,file_node,re.IGNORECASE):
+                    cmds.setAttr("%s.colorSpace"%file_node,"sRGB",type = "string")
+
+            for raw in raw_color:
+                if re.search(raw,file_node,re.IGNORECASE):
+                    cmds.setAttr("%s.colorSpace"%file_node,"Raw",type = "string")
+
             # and generate a preview:
             mel.eval("generateUvTilePreview %s" % file_node)
+
+
         return file_node
     
     # create texture node by texture folder:
@@ -334,7 +379,8 @@ class MayaActions(HookBaseClass):
         file_nodes = []
         if config == "UDIM":
             for image_file in full_file_name:
-                file_nodes.append(self._create_udim_texture_node(image_file,sg_publish_data))
+                if re.match(".+(1001\.[a-z].+)", image_file):
+                    file_nodes.append(self._create_udim_texture_node(image_file,sg_publish_data))
 
         elif config == "Texture":
             for image_file in full_file_name:
@@ -409,36 +455,175 @@ class MayaActions(HookBaseClass):
         return self._maya_major_version
 
 
-def _hookup_shaders(reference_node):
-    """
-    Reconnects published shaders to the corresponding mesh.
-    :return:
-    """
-
-    # find all shader hookup script nodes and extract the mesh object info
-    # print "reference node:", reference_node
-    hookup_prefix = "SHADER_HOOKUP_"
-    shader_hookups = {}
+# def _hookup_shaders(reference_node):
+#     """
+#     Reconnects published shaders to the corresponding mesh.
+#     :return:
+#     """
+#
+#     # find all shader hookup script nodes and extract the mesh object info
+#     # print "reference node:", reference_node
+#     hookup_prefix = "SHADER_HOOKUP_"
+#     shader_hookups = {}
+#     for node in cmds.ls(type="script"):
+#         node_parts = node.split(":")
+#         node_base = node_parts[-1]
+#         node_namespace = ":".join(node_parts[:-1])
+#         if not node_base.startswith(hookup_prefix):
+#             continue
+#         obj_pattern = node_base.replace(hookup_prefix, "") + "\d*"
+#         obj_pattern = "^" + obj_pattern + "$"
+#         shader = cmds.scriptNode(node, query=True, beforeScript=True)
+#         shader_hookups[obj_pattern] = node_namespace + ":" + shader
+#
+#     # if the object name matches an object in the file, connect the shaders
+#     for node in (cmds.ls(references=True, transforms=True) or []):
+#         for (obj_pattern, shader) in shader_hookups.iteritems():
+#             # get rid of namespacing
+#             node_base = node.split(":")[-1]
+#             if re.match(obj_pattern, node_base, re.IGNORECASE):
+#                 # assign the shader to the object
+#                 if not cmds.objExists(shader):
+#                     continue
+#                 cmds.select(node, replace=True)
+#                 cmds.hyperShade(assign=shader)
+def _shader_hookup_data(hookup_prefix):
+    shader_hookups = {}  # {geo:shader}
     for node in cmds.ls(type="script"):
         node_parts = node.split(":")
         node_base = node_parts[-1]
         node_namespace = ":".join(node_parts[:-1])
         if not node_base.startswith(hookup_prefix):
             continue
-        obj_pattern = node_base.replace(hookup_prefix, "") + "\d*"
+        obj_pattern = node_base.replace(hookup_prefix, "")  # + "\d*"
         obj_pattern = "^" + obj_pattern + "$"
         shader = cmds.scriptNode(node, query=True, beforeScript=True)
         shader_hookups[obj_pattern] = node_namespace + ":" + shader
 
+    return shader_hookups
+def _hookup_shaders(hookup_prefix,node_type,collection = None):
+
+    # find all shader hookup script nodes and extract the mesh object info
+    # print "reference node:", reference_node
+    # hookup_prefix = "SHADER_HOOKUP_"
+    shader_hookups = _shader_hookup_data(hookup_prefix)
     # if the object name matches an object in the file, connect the shaders
-    for node in (cmds.ls(references=True, transforms=True) or []):
+    if node_type == "mesh":
+        nodes = cmds.ls(transforms=True) or []
+    elif node_type == "xgmDescription":
+        try:
+            import xgenm as xg
+        except Exception, e:
+            raise Exception(e)
+        if collection is None:
+            raise Exception("The keyword 'collection' is None!")
+        nodes = xg.descriptions(collection)
+
+    for node in nodes:
+        node_shape = cmds.listRelatives(node, type=node_type, c=True)
+        if not node_shape:
+            continue
+        node_base = node.split(":")[-1]
+        node_long_name = cmds.ls(node, l=True)[0]
+        sp = node_long_name.split("|")
+        node_temp = None
+        node_parents = sp[:-1]
+        node_parent_base_list = []
+        for pa in node_parents:
+            if pa == "":
+                continue
+            node_parent_base_list.append(pa.split(":")[-1])
+        node_parent_base_list.append(node_base)
+        node_temp = "_".join(node_parent_base_list)
+
         for (obj_pattern, shader) in shader_hookups.iteritems():
-            # get rid of namespacing
-            node_base = node.split(":")[-1]
-            if re.match(obj_pattern, node_base, re.IGNORECASE):
+            if re.search(obj_pattern, node_temp, re.IGNORECASE):
                 # assign the shader to the object
+                # print obj_pattern,node_temp
                 if not cmds.objExists(shader):
                     continue
                 cmds.select(node, replace=True)
                 cmds.hyperShade(assign=shader)
+def _hookup_xgen(path):
 
+    try:
+        import xgenm as xg
+        import xgenm.ui.dialogs.xgImportFile as xif
+
+    except Exception, e:
+        raise Exception(e)
+    path = replaceSpecialCharacter(path)
+    print "xgen-path:", path
+    validator = xif.Validator(xg.ADD_TO_NEW_PALETTE, None)
+    xg.importBindPalette(str(path), '', validator, True)
+def _hookup_sim_crv(path):
+    try:
+        import xgenm as xg
+        import xgenm.xgGlobal as xgg
+    except Exception, e:
+        raise Exception(e)
+    path = str(replaceSpecialCharacter(path))
+    basename = os.path.basename(path)
+    _SIMCRV = "_SIMCRV"
+
+    if re.search(_SIMCRV,basename):
+        description = str(basename.split(_SIMCRV)[0])
+        palette = str(xg.palette(description))
+
+        # folder, name = os.path.split(cmds.file(q=True, sn=True))
+        # cache_folder = folder + "/cache/alembic"
+        # cache_files = os.listdir(cache_folder)
+        # cache_files.sort(key=lambda fn: os.path.getmtime(os.path.join(cache_folder, fn)))
+        # cache_file = os.listdir(os.path.join(cache_folder, cache_files[-1]))
+        # cache_file = os.path.join(cache_folder, cache_files[-1])
+        _object_type = str(xg.objects(palette, description)[2])
+        de = xgg.DescriptionEditor
+        # use cache
+        xg.setAttr(
+            str("useCache"),
+            str("1"),
+            palette,
+            description,
+            _object_type
+        )
+        # live mode :0
+        xg.setAttr(
+            str("liveMode"),
+            str("0"),
+            palette,
+            description,
+            _object_type
+        )
+        xg.setAttr(
+            str("cacheFileName"),
+            path,
+            palette,
+            description,
+            _object_type
+        )
+
+        de.update()
+        return True
+    else:
+        return False
+
+
+
+def replaceSpecialCharacter(strings):
+    if "\a" in strings:
+        strings = strings.replace("\a", "/a")
+    if "\b" in strings:
+        strings = strings.replace("\b", "/b")
+    if "\e" in strings:
+        strings = strings.replace("\e", "/e")
+    if "\n" in strings:
+        strings = strings.replace("\n", "/n")
+    if "\v" in strings:
+        strings = strings.replace("\v", "/v")
+    if "\r" in strings:
+        strings = strings.replace("\r", "/r")
+    if "\t" in strings:
+        strings = strings.replace("\t", "/t")
+    if "\f" in strings:
+        strings = strings.replace("\f", "/f")
+    return strings.replace("\\","/")
