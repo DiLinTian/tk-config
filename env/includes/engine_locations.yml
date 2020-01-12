@@ -91,14 +91,7 @@ engines.tk-shotgun.location:
 engines.tk-substancepainter.location:
   type: git
   branch: master
-  name: tk-substancepainter
+#  name: tk-substancepainter
   path: https://github.com/diegogarciahuerta/tk-substancepainter.git
   version: v1.1.1
 
-## katana
-#engines.tk-katana.location:
-#  type: git
-#  branch: master
-##  name: tk-substancepainter
-#  path: http://gitlab.anime.com/huangsheng/tk-substancepainter.git
-#  version: v1.1.1
