@@ -607,22 +607,20 @@ class MayaSessionCollector(HookBaseClass):
         engine = sgtk.platform.current_engine()
         context = engine.context
 
-        if context.step.get("id") == 138:
+        for collection in xg.palettes():
 
-            for collection in xg.palettes():
+            xgen_item = parent_item.create_item(
+                "maya.session.xgshader",
+                "XGen Shader",
+                collection+"_Shader"
+            )
+            # set the icon for the item
+            xgen_item.set_icon_from_path(icon_path)
 
-                xgen_item = parent_item.create_item(
-                    "maya.session.xgshader",
-                    "XGen Shader",
-                    collection+"_Shader"
-                )
-                # set the icon for the item
-                xgen_item.set_icon_from_path(icon_path)
+            xgen_item.properties["collection"] = collection
 
-                xgen_item.properties["collection"] = collection
-
-                xgen_item._expanded = False
-                xgen_item._active = True
+            xgen_item._expanded = False
+            xgen_item._active = True
 
     def _collect_xgen_geometry(self,parent_item):
         try:
@@ -639,28 +637,27 @@ class MayaSessionCollector(HookBaseClass):
         engine = sgtk.platform.current_engine()
         context = engine.context
 
-        if context.step.get("id") == 138:
-            collection = xg.palettes()[0]
-            xg_geometry = set()
-            for descriptions in xg.descriptions(collection):
-                geometry = xg.boundGeometry(collection,descriptions)
-                for geo in geometry :
-                    xg_geometry.add(geo)
-            _geometry = list(xg_geometry)
-            self.logger.debug("XGen Geometry:%s"%_geometry)
-            for geo in list(_geometry):
-                xgen_item = parent_item.create_item(
-                    "maya.session.xggeometry",
-                    "XGen Geometry",
-                    geo
-                )
-                # set the icon for the item
-                xgen_item.set_icon_from_path(icon_path)
+        collection = xg.palettes()[0]
+        xg_geometry = set()
+        for descriptions in xg.descriptions(collection):
+            geometry = xg.boundGeometry(collection,descriptions)
+            for geo in geometry :
+                xg_geometry.add(geo)
+        _geometry = list(xg_geometry)
+        self.logger.debug("XGen Geometry:%s"%_geometry)
+        for geo in list(_geometry):
+            xgen_item = parent_item.create_item(
+                "maya.session.xggeometry",
+                "XGen Geometry",
+                geo
+            )
+            # set the icon for the item
+            xgen_item.set_icon_from_path(icon_path)
 
-                xgen_item.properties["geometry"] = geo
+            xgen_item.properties["geometry"] = geo
 
-                xgen_item._expanded = False
-                xgen_item._active = True
+            xgen_item._expanded = False
+            xgen_item._active = True
 
 def getCurrentShotName(scene_path):
     '''
