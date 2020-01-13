@@ -101,7 +101,7 @@ class MayaSessionCollector(HookBaseClass):
 
             self.collect_playblasts(item, project_root)
             self.collect_alembic_caches(item, project_root)
-            if step_id == 138:
+            if step_id == 137:
                 self._collect_xgen(item, project_root)
                 self._collect_xgen_shader(item)
                 self._collect_xgen_geometry(item)
@@ -117,7 +117,7 @@ class MayaSessionCollector(HookBaseClass):
                     }
                 }
             )
-        if step_id !=138:
+        if step_id !=137:
             if cmds.ls(geometry=True, noIntermediate=True):
                 self._collect_session_geometry(item)
 
