@@ -10,13 +10,13 @@
 
 import glob
 import os
+import re
 import maya.cmds as cmds
 import maya.mel as mel
 import sgtk
-
+from sgtk.util import shotgun
 HookBaseClass = sgtk.get_hook_baseclass()
-
-
+ISASSEMBLY = False
 class MayaSessionCollector(HookBaseClass):
     """
     Collector that operates on the maya session. Should inherit from the basic
@@ -73,21 +73,28 @@ class MayaSessionCollector(HookBaseClass):
         :param parent_item: Root item instance
 
         """
+        path = cmds.file(query=True, sn=True)
+        if not path:
+            em = "Please save the scene first."
+            self.logger.error(em)
+            raise Exception(em)
+        filename = os.path.basename(path)
+        isProxy = False
+        if "RSProxyRig" in filename:
+            isProxy = True
 
         # create an item representing the current maya session
         item = self.collect_current_maya_session(settings, parent_item)
         project_root = item.properties["project_root"]
         context = item.context
-
-        self.logger.debug("collector:session----%s----" % context)
+        # self.logger.debug("collector:session----%s----" % context)
         self.logger.debug("collector:session----%s----" % context.task)
         # look at the render layers to find rendered images on disk
         self.collect_rendered_images(item)
         step_id = context.step.get('id')
-        self.logger.debug("step_id:---%s---" % step_id)
+        # self.logger.debug("step_id:---%s---" % step_id)
         # if we can determine a project root, collect other files to publish
         if project_root:
-
             self.logger.info(
                 "Current Maya project is: %s." % (project_root,),
                 extra={
@@ -98,15 +105,12 @@ class MayaSessionCollector(HookBaseClass):
                     }
                 }
             )
-
-            self.collect_playblasts(item, project_root)
-            self.collect_alembic_caches(item, project_root)
-            if step_id == 137:
+            # self.collect_playblasts(item, project_root)
+            if step_id == 138:
                 self._collect_xgen(item, project_root)
                 self._collect_xgen_shader(item)
                 self._collect_xgen_geometry(item)
         else:
-
             self.logger.info(
                 "Could not determine the current Maya project.",
                 extra={
@@ -117,16 +121,31 @@ class MayaSessionCollector(HookBaseClass):
                     }
                 }
             )
-        if step_id !=137:
-            if cmds.ls(geometry=True, noIntermediate=True):
-                self._collect_session_geometry(item)
-
 
         if step_id in [106,35]:
             self._collect_cameras(item)
-        if step_id in[15,16]:
-            self._collect_meshes(item)
-            self._collect_uvmap(item)
+        if step_id in[15]:
+            if not isProxy:
+                self._collect_meshes(item)
+        # if step_id in [14,15]:
+        #     self._collect_assembly(item)
+        if step_id in [16,136]:
+            self._collect_fbx_geometry(item)
+            # self._collect_uvmap(item)
+        if step_id in [143]:
+            self._collect_simcrv(item)
+        self._collect_lightrig(item)
+        # print "ISASSEMBLY:",ISASSEMBLY
+        if step_id not in [138,150,155]:
+            if cmds.ls(geometry=True, noIntermediate=True):
+                # if not ISASSEMBLY:
+                if not isProxy:
+                    self._collect_session_geometry(item)
+        if project_root:
+            # if not ISASSEMBLY:
+            if not isProxy:
+                self.collect_alembic_caches(item, project_root)
+
 
 
     def collect_current_maya_session(self, settings, parent_item):
@@ -208,17 +227,46 @@ class MayaSessionCollector(HookBaseClass):
 
         # modify abc folder like this: .../cache/alembic/{shot_name}
 
-        publisher = self.parent
-
-        # get the path to the current file
-        path = cmds.file(query=True, sn=True)
-
-        # determine the display name for the item
-        if path:
-            shot_version_name = getCurrentShotName(path)
-        else:
-            shot_version_name = "untitled"
-        cache_dir = os.path.join(project_root, "cache", "alembic",shot_version_name)
+        # publisher = self.parent
+        #
+        # # get the path to the current file
+        # path = cmds.file(query=True, sn=True)
+        #
+        # # determine the display name for the item
+        # if path:
+        #     shot_version_name = getCurrentShotName(path)
+        # else:
+        #     shot_version_name = "untitled"
+        # cache_dir = os.path.join(project_root, "cache", "alembic",shot_version_name)
+        # if not os.path.exists(cache_dir):
+        #     return
+        #
+        # self.logger.info(
+        #     "Processing alembic cache folder: %s" % (cache_dir,),
+        #     extra={
+        #         "action_show_folder": {
+        #             "path": cache_dir
+        #         }
+        #     }
+        # )
+        from func import shotgun_func,_shotgun_server,replace_special_character as rsc
+        reload(shotgun_func)
+        scene_data = shotgun_func.getSceneSGData()
+        current_id = scene_data.get('entity').get('id')
+        current_entity_type = scene_data.get('entity').get('type')
+        sg = _shotgun_server._shotgun()
+        publish_files = sg.find("PublishedFile", [['entity.%s.id'%current_entity_type, 'is', current_id]],
+                                ['published_file_type', 'path'])
+        abc_publish_files = []
+        for pf in publish_files:
+            if pf.get('published_file_type').get('name') == "Alembic Cache":
+                _path = pf.get('path').get('local_path_windows')
+                if "\\cache\\alembic" not in _path:
+                    continue
+                if  _path not in abc_publish_files:
+                    abc_publish_files.append(rsc.replaceSpecialCharacter(_path))
+        print abc_publish_files
+        cache_dir = os.path.join(project_root, "cache", "alembic")
         if not os.path.exists(cache_dir):
             return
 
@@ -234,12 +282,14 @@ class MayaSessionCollector(HookBaseClass):
         # look for alembic files in the cache folder
         for filename in os.listdir(cache_dir):
             cache_path = os.path.join(cache_dir, filename)
-
+            cache_path = rsc.replaceSpecialCharacter(cache_path)
             # do some early pre-processing to ensure the file is of the right
             # type. use the base class item info method to see what the item
             # type would be.
             item_info = self._get_item_info(filename)
             if item_info["item_type"] != "file.alembic":
+                continue
+            if cache_path in abc_publish_files:
                 continue
 
             # allow the base class to collect and create the item. it knows how
@@ -249,7 +299,7 @@ class MayaSessionCollector(HookBaseClass):
                 cache_path
             )
             item._expanded = False
-            item._active = False
+            item._active = True
     def _collect_session_geometry(self, parent_item):
         """
         Creates items for session geometry to be exported.
@@ -354,9 +404,16 @@ class MayaSessionCollector(HookBaseClass):
         :param parent_item: Parent Item instance
         :return:
         """
+        scene = cmds.file(q=True, sn=True)
+        basename = os.path.basename(scene)
+        _name, ext = os.path.splitext(basename)
+        work_dir = cmds.workspace(q=True, sn=True)
+        image_dir = work_dir + '/images'
 
         # get a list of render layers not defined in the file
         render_layers = []
+        _render = cmds.getAttr("defaultRenderGlobals.currentRenderer")
+        # _prefix = cmds.getAttr("vraySettings.fileNamePrefix")
         for layer_node in cmds.ls(type="renderLayer"):
             try:
                 # if this succeeds, the layer is defined in a referenced file
@@ -378,7 +435,18 @@ class MayaSessionCollector(HookBaseClass):
                 fullPath=True,
                 layer=layer
             )
+            if _render == "vray":
+                try:
 
+                    mel.eval("unifiedRenderGlobalsWindow;")
+                    cmds.workspaceControl("unifiedRenderGlobalsWindow", e=True, vis=0, r=True)
+                    fileprefix = cmds.getAttr('vraySettings.fileNamePrefix')
+                    _image_format = cmds.getAttr("vraySettings.imageFormatStr")
+                    if fileprefix == '<Scene>/<Layer>/<Scene>':
+                        image_file = image_dir + '/' + _name + '/' + layer + '/' + _name + '*.%s'%_image_format
+                        frame_glob = image_file
+                except:
+                    pass
             # see if there are any files on disk that match this pattern
             rendered_paths = glob.glob(frame_glob)
             self.logger.debug( "rendered_paths: ----%s----"%rendered_paths)
@@ -506,40 +574,37 @@ class MayaSessionCollector(HookBaseClass):
     def _collect_uvmap(self,parent_item):
 
         # if the step is uv ,display these items
-        engine = sgtk.platform.current_engine()
-        context = engine.context
-        if context.step.get('id') == 136:
 
-            self.logger.info("uv map publish...")
-            icon_path = os.path.join(
-                self.disk_location,
-                os.pardir,
-                "icons",
-                "uvmap.png"
+        self.logger.info("uv map publish...")
+        icon_path = os.path.join(
+            self.disk_location,
+            os.pardir,
+            "icons",
+            "uvmap.png"
+        )
+
+        objects = set()
+        meshs = cmds.ls(type="mesh")
+        for m in meshs:
+            parent = cmds.listRelatives(m, p=True)[0]
+            # parent = parent.replace(":", "_")
+            # parent = parent.replace("_", "")
+            objects.add(parent)
+
+        for obj in objects:
+            uv_item = parent_item.create_item(
+                "maya.session.uvmap",
+                "UVMap",
+                obj
             )
 
-            objects = set()
-            meshs = cmds.ls(type="mesh")
-            for m in meshs:
-                parent = cmds.listRelatives(m, p=True)[0]
-                # parent = parent.replace(":", "_")
-                # parent = parent.replace("_", "")
-                objects.add(parent)
+            uv_item.set_icon_from_path(icon_path)
+            uv_item.properties["uvmap_name"] = obj
+            file_name = obj.replace(":","_")
+            uv_item.properties["uvmap_file_name"] = file_name
 
-            for obj in objects:
-                uv_item = parent_item.create_item(
-                    "maya.session.uvmap",
-                    "UVMap",
-                    obj
-                )
-
-                uv_item.set_icon_from_path(icon_path)
-                uv_item.properties["uvmap_name"] = obj
-                file_name = obj.replace(":","_")
-                uv_item.properties["uvmap_file_name"] = file_name
-
-                uv_item._expanded = False
-                # uv_item._active = False
+            uv_item._expanded = False
+            # uv_item._active = False
 
     def _collect_xgen(self,parent_item, project_root):
 
@@ -601,11 +666,8 @@ class MayaSessionCollector(HookBaseClass):
             self.disk_location,
             os.pardir,
             "icons",
-            "mesh.png"
+            "XGen.png"
         )
-
-        engine = sgtk.platform.current_engine()
-        context = engine.context
 
         for collection in xg.palettes():
 
@@ -632,10 +694,8 @@ class MayaSessionCollector(HookBaseClass):
             self.disk_location,
             os.pardir,
             "icons",
-            "geometry.png"
+            "XGen.png"
         )
-        engine = sgtk.platform.current_engine()
-        context = engine.context
 
         collection = xg.palettes()[0]
         xg_geometry = set()
@@ -645,20 +705,204 @@ class MayaSessionCollector(HookBaseClass):
                 xg_geometry.add(geo)
         _geometry = list(xg_geometry)
         self.logger.debug("XGen Geometry:%s"%_geometry)
-        for geo in list(_geometry):
-            xgen_item = parent_item.create_item(
-                "maya.session.xggeometry",
-                "XGen Geometry",
-                geo
+        _geometry_grp = cmds.listRelatives(_geometry[0],parent = True)[0]
+
+
+        xgen_item = parent_item.create_item(
+            "maya.session.xggeometry",
+            "XGen Geometry",
+            _geometry_grp
+        )
+        # set the icon for the item
+        xgen_item.set_icon_from_path(icon_path)
+
+        xgen_item.properties["geometry"] = _geometry_grp
+
+        xgen_item._expanded = False
+        xgen_item._active = True
+        # for geo in list(_geometry):
+        #     xgen_item = parent_item.create_item(
+        #         "maya.session.xggeometry",
+        #         "XGen Geometry",
+        #         geo
+        #     )
+        #     # set the icon for the item
+        #     xgen_item.set_icon_from_path(icon_path)
+        #
+        #     xgen_item.properties["geometry"] = geo
+        #
+        #     xgen_item._expanded = False
+        #     xgen_item._active = True
+
+    def _collect_fbx_geometry(self, parent_item):
+        """
+        Creates items for session geometry to be exported.
+
+        :param parent_item: Parent Item instance
+        """
+        self.logger.debug('fbx collector...')
+        icon_path = os.path.join(
+            self.disk_location,
+            os.pardir,
+            "icons",
+            "fbx.jpg"
+        )
+
+        # iterate over all top-level transforms and create mesh items
+        # for any mesh.
+
+        for object in cmds.ls(assemblies=True):
+
+            if not cmds.ls(object, dag=True, type="mesh"):
+                # ignore non-meshes
+                continue
+            print "object is %s:",object
+
+            # create a new item parented to the supplied session item. We
+            # define an item type (maya.session.mesh) that will be
+            # used by an associated shader publish plugin as it searches for
+            # items to act upon. We also give the item a display type and
+            # display name (the group name). In the future, other publish
+            # plugins might attach to these mesh items to publish other things
+
+            # object = object.replace(":","_")
+            mesh_item = parent_item.create_item(
+                "maya.fbx.geometry",
+                "FBXGeometry",
+                object
             )
+
             # set the icon for the item
-            xgen_item.set_icon_from_path(icon_path)
+            mesh_item.set_icon_from_path(icon_path)
 
-            xgen_item.properties["geometry"] = geo
+            # finally, add information to the mesh item that can be used
+            # by the publish plugin to identify and export it properly
+            mesh_item.properties["object"] = object
 
-            xgen_item._expanded = False
-            xgen_item._active = True
+            mesh_item._expanded = False
+            mesh_item._active = True
+            # if step is shading , active is True.
+            # if context.step.get('id') in [16,136]:
+            #     mesh_item._active = True
 
+    def _collect_lightrig(self,parent_item):
+        self.logger.debug('lightrig collector...')
+        icon_path = os.path.join(
+            self.disk_location,
+            os.pardir,
+            "icons",
+            "lightrig.png"
+        )
+
+        # iterate over all top-level transforms and create mesh items
+        # for any mesh.
+        lightRig = None
+        context = parent_item.context
+        entity_name = context.entity.get('name')
+        entity_name = entity_name.replace('_','')
+        for object in cmds.ls(assemblies=True):
+
+            if re.match(entity_name + '_lightRig_',object):
+                lightRig = object
+                break
+        if lightRig is not None:
+            mesh_item = parent_item.create_item(
+                "maya.session.lightrig",
+                "LightRig",
+                lightRig
+            )
+
+            # set the icon for the item
+            mesh_item.set_icon_from_path(icon_path)
+
+            # finally, add information to the mesh item that can be used
+            # by the publish plugin to identify and export it properly
+            mesh_item.properties["lightRig"] = lightRig
+
+            mesh_item._expanded = False
+            mesh_item._active = True
+        else:
+            self.logger.debug('No lightrig exists.')
+
+    def _collect_simcrv(self,parent_item):
+        self.logger.debug('simCurve collector...')
+        icon_path = os.path.join(
+            self.disk_location,
+            os.pardir,
+            "icons",
+            "XGen.png"
+        )
+
+        # iterate over all top-level transforms and create mesh items
+        # for any mesh.
+        _simcrv_list = cmds.ls("*_SIMCRV")
+        if not _simcrv_list:
+            return
+        for simcrv in _simcrv_list:
+
+            mesh_item = parent_item.create_item(
+                "maya.session.simcrv",
+                "SimCurve",
+                simcrv
+            )
+
+            # set the icon for the item
+            mesh_item.set_icon_from_path(icon_path)
+
+            # finally, add information to the mesh item that can be used
+            # by the publish plugin to identify and export it properly
+            mesh_item.properties["simCrvName"] = simcrv
+
+            mesh_item._expanded = False
+            mesh_item._active = True
+    def _collect_assembly(self,parent_item):
+        self.logger.debug('assembly collector...')
+        global ISASSEMBLY
+        all_objects = cmds.ls(assemblies=True)
+        _assembly_objects = []
+        other_objects = []
+        for ao in all_objects:
+            if cmds.objectType(ao) == "assemblyDefinition":
+                _assembly_objects.append(ao)
+            elif cmds.objectType(ao) == "assemblyReference":
+                _assembly_objects.append(ao)
+            else:
+                other_objects.append(ao)
+        if not _assembly_objects:
+            ISASSEMBLY = False
+            return
+        else:
+            ISASSEMBLY = True
+        mesh_objects = []
+        for obj in other_objects:
+            mesh = cmds.ls(obj,dag = True,type="mesh")
+            if mesh:
+                mesh_objects.append(mesh)
+        if mesh_objects:
+            return
+        ad = cmds.ls(type="assemblyDefinition")
+        ar = cmds.ls(type="assemblyReference")
+        if ad and ar:
+            emg = "AssemblyDefinition and assemblyReference,two types of nodes, only one can exist with an assembly asset."
+            self.logger.debug(emg)
+            return
+        icon_path = os.path.join(
+            self.disk_location,
+            os.pardir,
+            "icons",
+            "maya.png"
+        )
+        ISASSEMBLY = True
+        _assembly_objects_str = ';'.join(_assembly_objects)
+        assembly_item = parent_item.create_item(
+            "maya.session.assembly",
+            "Assembly",
+            _assembly_objects[0] + '...'
+        )
+        assembly_item.set_icon_from_path(icon_path)
+        assembly_item.properties['assemblyName'] = _assembly_objects_str
+        assembly_item._expanded = False
+        assembly_item._active = True
 def getCurrentShotName(scene_path):
     '''
 
@@ -669,3 +913,6 @@ def getCurrentShotName(scene_path):
     sp = basename.split(".")[:-1]
     name = ".".join(sp)
     return name
+def _shotgun():
+    sg = shotgun.create_sg_connection()
+    return sg

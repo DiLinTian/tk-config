@@ -11,6 +11,7 @@
 
 import os
 import re
+import sys
 import maya.cmds as cmds
 import sgtk
 
@@ -167,9 +168,7 @@ class MayaXGenPublishPlugin(HookBaseClass):
             self.logger.error(error_msg)
             raise Exception(error_msg)
 
-
         item.properties["path"] = publish_template.apply_fields(work_fields)
-
         # use the work file's version number when publishing
         if "version" in work_fields:
             item.properties["publish_version"] = work_fields["version"]
@@ -183,6 +182,9 @@ class MayaXGenPublishPlugin(HookBaseClass):
             settings, item)
 
     def publish(self, settings, item):
+
+        # save the file
+        cmds.file(save = True)
 
         publisher = self.parent
         path = _session_path()
@@ -225,42 +227,30 @@ class MayaXGenPublishPlugin(HookBaseClass):
 
         # plugin to do all the work to register the file with SG
         super(MayaXGenPublishPlugin, self).publish(settings, item)
-def replaceSpecialCharacter(strings):
-    if "\a" in strings:
-        strings = strings.replace("\a", "/a")
-    if "\b" in strings:
-        strings = strings.replace("\b", "/b")
-    if "\e" in strings:
-        strings = strings.replace("\e", "/e")
-    if "\n" in strings:
-        strings = strings.replace("\n", "/n")
-    if "\v" in strings:
-        strings = strings.replace("\v", "/v")
-    if "\r" in strings:
-        strings = strings.replace("\r", "/r")
-    if "\t" in strings:
-        strings = strings.replace("\t", "/t")
-    if "\f" in strings:
-        strings = strings.replace("\f", "/f")
-    return strings.replace("\\","/")
 def changeXGenProjectPath(xgen,project_path,version,collection,logger):
     xgProjectPath = "xgProjectPath"
     xgDataPath = "xgDataPath"
-    rep_path = replaceSpecialCharacter(project_path)
+    from func import replace_special_character as rsc
+    rep_path = rsc.replaceSpecialCharacter(project_path)
     # rep_path = rep_path.replace("\\","/")
     logger.debug("replace_path:%s" % rep_path)
-    data_path = "${PROJECT}xgen/collections"
-    new_data_path = "%s/v%03d/%s" % (data_path, int(version), collection)
+
+    new_data_path = ""
     with open(xgen,"r") as f:
         lines = f.readlines()
         for i in xrange(len(lines)):
             if re.search(xgProjectPath,lines[i]):
                 lines[i] = re.sub("/work/","/publish/",lines[i])
             if re.search(xgDataPath, lines[i]):
-                sp = lines[i].split(xgDataPath)
-                new2 = re.sub("[\$\w].+", new_data_path, sp[1])
-                new2 = "".join([sp[0], xgDataPath, new2])
-                lines[i] = new2
+                if not new_data_path:
+                    sp = lines[i].split('/collections/')
+                    new_data_path = '{dir}/collections/{version}/{col_name}\n'.format(
+                        dir = sp[0],
+                        version = 'v%03d'%int(version),
+                        col_name = collection
+                    )
+                    new_data_path = re.sub("/work/","/publish/",new_data_path)
+                lines[i] = new_data_path
     with open(xgen,"w") as f:
         f.writelines(lines)
 def _session_path():

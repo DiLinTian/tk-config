@@ -225,19 +225,31 @@ settings.tk-multi-publish2.maya.asset_step:
   - name: Publish UVMap
     hook: "{self}/publish_file.py:{config}/tk-multi-publish2/maya/publish_uvmap.py"
     settings:
-      Publish Template: maya_uvmap_publish
+        Publish Template: maya_uvmap_publish
   - name: Publish XGen
     hook: "{self}/publish_file.py:{config}/tk-multi-publish2/maya/publish_xgen.py"
     settings:
-      Publish Template: maya_xgen_publish
+        Publish Template: maya_xgen_publish
   - name: Publish XGen Shader
     hook: "{self}/publish_file.py:{config}/tk-multi-publish2/maya/publish_xgen_shader.py"
     settings:
-      Publish Template: maya_xgshader_publish
+        Publish Template: maya_xgshader_publish
   - name: Publish XGen Geometry
     hook: "{self}/publish_file.py:{config}/tk-multi-publish2/maya/publish_xgen_geometry.py"
     settings:
-      Publish Template: maya_xggeometry_publish
+        Publish Template: maya_xggeometry_publish
+  - name: Publish FBX Geometry
+    hook: "{self}/publish_file.py:{config}/tk-multi-publish2/maya/publish_fbx_geometry.py"
+    settings:
+        Publish Template: maya_fbx_publish
+  - name: Publish Light Rig
+    hook: "{self}/publish_file.py:{config}/tk-multi-publish2/maya/publish_lightrig.py"
+    settings:
+       Publish Template: maya_lightrig_publish
+  - name: Publish Assembly
+    hook: "{self}/publish_file.py:{config}/tk-multi-publish2/maya/publish_assembly.py"
+    settings:
+      Publish Template: maya_assembly_publish
   help_url: *help_url
   location: "@apps.tk-multi-publish2.location"
 
@@ -258,14 +270,23 @@ settings.tk-multi-publish2.maya.shot_step:
     hook: "{engine}/tk-multi-publish2/basic/start_version_control.py"
     settings: {}
   - name: Publish to Shotgun
-    hook: "{self}/publish_file.py:{engine}/tk-multi-publish2/basic/publish_session.py"
+#    hook: "{self}/publish_file.py:{engine}/tk-multi-publish2/basic/publish_session.py"
+    hook: "{self}/publish_file.py:{config}/tk-multi-publish2/maya/publish_session.py"
     settings:
         Publish Template: maya_shot_publish
-  - name: Publish to Shotgun
+  - name: Publish Camera
     hook: "{self}/publish_file.py:{config}/tk-multi-publish2/maya/publish_camera.py"
     settings:
         Publish Template: maya_shot_camera_publish
         Cameras: [Cam*]
+  - name: Publish SIMCRV
+    hook: "{self}/publish_file.py:{config}/tk-multi-publish2/maya/publish_simcrv.py"
+    settings:
+        Publish Template: maya_simcrv_publish
+  - name: Publish Light Rig(Shot)
+    hook: "{self}/publish_file.py:{config}/tk-multi-publish2/maya/publish_lightrig.py"
+    settings:
+      Publish Template: maya_lightrigshot_publish
   help_url: *help_url
   location: "@apps.tk-multi-publish2.location"
 

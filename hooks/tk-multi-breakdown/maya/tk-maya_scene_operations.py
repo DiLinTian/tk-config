@@ -85,7 +85,9 @@ class BreakdownSceneOperations(Hook):
         tk = sgtk.sgtk_from_path( scene_path )
         substance_publish_template = "substancepainter_asset_textures_path_publish"
         template_obj = tk.templates[substance_publish_template]
-
+        context = engine.context
+        step_id = context.step.get('id')
+        uv_step = 136
         for i in items:
 
             node = i["node"]
@@ -94,10 +96,12 @@ class BreakdownSceneOperations(Hook):
             #\\3par\ibrix01\shotgun\shotgun_work\tdprojects\assets\Environment\table\TXT\publish\substancepainter\textures\table_textures_v004
 
             if node_type == "reference":
+
                 # maya reference
                 engine.log_debug("Maya Reference %s: Updating to version %s" % (node, new_path))
                 rn = pm.system.FileReference(node)
                 rn.replaceWith(new_path)
+
 
             elif node_type == "file":
                 # file texture node
@@ -115,3 +119,8 @@ class BreakdownSceneOperations(Hook):
                 cmds.setAttr("%s.fileTextureName" % node, new_path, type="string")
 
 
+
+def renameRefNode(ref_node, new_name):
+    cmds.lockNode(ref_node, l=False)
+    new_node = cmds.rename(ref_node, new_name)
+    cmds.lockNode(new_node, l=True)

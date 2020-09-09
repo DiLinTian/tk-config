@@ -74,7 +74,7 @@ class MayaXGenGeometryPublishPlugin(HookBaseClass):
     @property
     def item_filters(self):
 
-        return ["maya.session.xggeometry"]
+        return ["maya.session.simcrv"]
 
     ############################################################################
     # Publish processing methods
@@ -138,14 +138,12 @@ class MayaXGenGeometryPublishPlugin(HookBaseClass):
 
         path = sgtk.util.ShotgunPath.normalize(path)
 
-        xg_geometry = item.properties["geometry"]
-        self.logger.debug("publish_geometry:%s"%xg_geometry)
+        simcrv = item.properties["simCrvName"]
+        self.logger.debug("publish_simcrv:%s"%simcrv)
         # check that there is still geometry in the scene:
-        if (not cmds.ls(xg_geometry, dag=True, type="mesh")):
+        if (not cmds.ls(simcrv, dag=True, type="nurbsCurve")):
             error_msg = (
-                "Validation failed because there are no meshes in the scene "
-                "to export xgen collection for. You can uncheck this plugin or create "
-                "xgen collection."
+                "Validation failed because there are no nurbsCurve in the %s ."%simcrv
             )
             self.logger.error(error_msg)
             raise Exception(error_msg)
@@ -157,10 +155,13 @@ class MayaXGenGeometryPublishPlugin(HookBaseClass):
         # get the current scene path and extract fields from it using the work
         # template:
         work_fields = work_template.get_fields(path)
-        object_display = re.sub(r'[\W_]+', '', xg_geometry)
+        object_display = re.sub(r'[\W_]+', '', simcrv)
+
         work_fields["name"] = object_display
+
+        work_fields["simCrvName"] = simcrv
         # set the display name as the name to use in SG to represent the publish
-        item.properties["publish_name"] = object_display
+        item.properties["publish_name"] = simcrv
 
         # ensure the fields work for the publish template
         missing_keys = publish_template.missing_keys(work_fields)
@@ -191,25 +192,19 @@ class MayaXGenGeometryPublishPlugin(HookBaseClass):
         from func import replace_special_character as rsc
         publish_path = rsc.replaceSpecialCharacter(publish_path)
 
-        geo = item.properties['geometry']
-        fullname = cmds.ls(geo,l = True)
+        simcrv = item.properties['simCrvName']
+        fullname = cmds.ls(simcrv,l = True)
         if len(fullname)>1:
-            raise Exception("More than one '%s' exists!"%geo)
-        # parent = fullname[0].split("|")[1]
+            raise Exception("More than one '%s' exists!"%simcrv)
         publisher.ensure_folder_exists(os.path.split(publish_path)[0])
-        cmds.select(geo,r = True)
-        cmds.file(
-            publish_path,
-            type='mayaAscii',
-            exportSelected=True,
-            options="v=0",
-            prompt=False,
-            force=True
-        )
+        from __Maya.common import maya_func
+        start = cmds.playbackOptions(q=True, ast=True)
+        end = cmds.playbackOptions(q=True, aet=True)
+        maya_func.export_alembic(simcrv,publish_path,start,end)
         self.logger.info("A Publish will be created in Shotgun and linked to:")
         self.logger.info("  %s" % (publish_path))
 
-        item.properties["publish_type"] = "MAYA XGGeometry"
+        item.properties["publish_type"] = "Maya SIMCRV"
         super(MayaXGenGeometryPublishPlugin, self).publish(settings, item)
 
 def _session_path():

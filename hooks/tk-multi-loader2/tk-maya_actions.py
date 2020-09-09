@@ -22,7 +22,6 @@ import sgtk
 import json
 
 HookBaseClass = sgtk.get_hook_baseclass()
-
 class MayaActions(HookBaseClass):
     
     ##############################################################################################################
@@ -82,6 +81,11 @@ class MayaActions(HookBaseClass):
                                       "params": None,
                                       "caption": "Import into Scene", 
                                       "description": "This will import the item into the current scene."} )
+        if "link" in actions:
+            action_instances.append( {"name": "link",
+                                      "params": None,
+                                      "caption": "Link File Path",
+                                      "description": "This will link the file with related objects."} )
 
         if "texture_node" in actions:
             action_instances.append( {"name": "texture_node",
@@ -135,6 +139,7 @@ class MayaActions(HookBaseClass):
         """
         for single_action in actions:
             name = single_action["name"]
+            print "action_name:",name
             sg_publish_data = single_action["sg_publish_data"]
             params = single_action["params"]
             self.execute_action(name, params, sg_publish_data)
@@ -172,7 +177,33 @@ class MayaActions(HookBaseClass):
 
         if name == "image_plane":
             self._create_image_plane(path, sg_publish_data)
+        if name == "link":
+            self._do_link(path,sg_publish_data)
+        # update scene time
+        update_scene_time()
+        # update render setting
+        from func import _shotgun_server,replace_special_character as rsc
 
+        sg = _shotgun_server._shotgun()
+        task = sg_publish_data.get('task')
+        task_find = sg.find_one('Task', [['id', 'is', task.get('id')]], ['step'])
+        import_preset_step = [150,155,7,144]
+        publish_file_step = task_find.get('step').get('id')
+        if publish_file_step in import_preset_step:
+            current_dir,filename = os.path.split(path)
+            current_dir = rsc.replaceSpecialCharacter(current_dir)
+            load_path = current_dir
+            if 'lightRig' not in current_dir:
+                load_path = load_path + "/lightRig"
+            _files = os.listdir(load_path)
+            for _f in _files:
+                if _f.endswith('.json'):
+                    print _f
+                    preset_name = _f.split(".")[0]
+                    self._load_render_setting(preset_name,load_path)
+                    break
+        # udpate resolution
+        update_resolution()
     ##############################################################################################################
     # helper methods which can be subclassed in custom hooks to fine tune the behaviour of things
     
@@ -193,12 +224,29 @@ class MayaActions(HookBaseClass):
         # make a name space out of entity name + publish name
         # e.g. bunny_upperbody
         # namespace = "%s %s" % (sg_publish_data.get("entity").get("name"), sg_publish_data.get("name"))
-        if _hookup_sim_crv(path):
-            return
+
+        # layout , animation, preshot load mode changed to import
+        import_step = [35]
+        published_file_type = sg_publish_data.get('published_file_type').get('name')
+        if published_file_type != "MAYA Camera":
+            from func import _shotgun_server
+            sg = _shotgun_server._shotgun()
+            task = sg_publish_data.get('task')
+            task_find = sg.find_one('Task',[['id','is',task.get('id')]],['step'])
+            if task_find.get('step').get('id') in import_step:
+                self._do_import(path,sg_publish_data)
+                return
+        # no_namespace_step = [136,15]
+        # engine = sgtk.platform.current_engine()
+        # context = engine.context
+        # current_step = context.step
+        # if current_step.get('id') in no_namespace_step:
+        #     namespace = ":"
+        # else:
         name = sg_publish_data.get('name')
         namespace = (name.split(".")[0])
         namespace = namespace.replace(" ", "_")
-        published_file_type = sg_publish_data.get('published_file_type').get('name')
+
         # print sg_publish_data
 
         pm.system.createReference(path,
@@ -226,8 +274,6 @@ class MayaActions(HookBaseClass):
             _hookup_shaders("XGSHADER_HOOKUP_","xgmDescription",str(collection))
             return
 
-
-
     def _do_import(self, path, sg_publish_data):
         """
         Create a reference with the same settings Maya would use
@@ -242,8 +288,6 @@ class MayaActions(HookBaseClass):
         # make a name space out of entity name + publish name
         # e.g. bunny_upperbody                
         # namespace = "%s %s" % (sg_publish_data.get("entity").get("name"), sg_publish_data.get("name"))
-        if _hookup_sim_crv(path):
-            return
         published_file_type = sg_publish_data.get('published_file_type').get('name')
         xgen_type = "Maya XGen"
         if published_file_type == xgen_type:
@@ -256,6 +300,17 @@ class MayaActions(HookBaseClass):
             namespace = ":"
         # perform a more or less standard maya import, putting all nodes brought in into a specific namespace
         cmds.file(path, i=True, renameAll=True, namespace=namespace, loadReferenceDepth="all", preserveReferences=True)
+        try:
+            mel.eval('source "removeAllNameSpace.mel";')
+            mel.eval('removeAllNameSpace();')
+        except:
+            pass
+    def _do_link(self,path,sg_publish_data):
+        print "do link..."
+        published_file_type = sg_publish_data.get('published_file_type').get('name')
+
+        if published_file_type == "Maya SIMCRV":
+            _hookup_simcrv(path)
 
     def _create_texture_node(self, path, sg_publish_data):
         """
@@ -292,7 +347,6 @@ class MayaActions(HookBaseClass):
         if file_type == 'Texture Folder':
             return self._create_texture_nodes_byfolder(path,sg_publish_data)
         return self._create_texture_node_func(path,sg_publish_data)
-
     def _create_texture_node_func(self,path,sg_publish_data):
 
         # file_node = cmds.shadingNode('file', asTexture=True)
@@ -328,8 +382,6 @@ class MayaActions(HookBaseClass):
 
             # and generate a preview:
             mel.eval("generateUvTilePreview %s" % file_node)
-
-
         return file_node
     
     # create texture node by texture folder:
@@ -340,7 +392,6 @@ class MayaActions(HookBaseClass):
         """
         _files = os.listdir(path)
         full_file_name =[]
-
         json_file = ''
         other_file = []
         for _file in _files:
@@ -362,10 +413,8 @@ class MayaActions(HookBaseClass):
             return
         for otf in other_file:
             full_file_name.remove(otf)
-
         with open(json_file,'r') as f:
             _data = json.load(f)
-
         texturesets = _data.get("texturesets")
         if not texturesets:
             return
@@ -375,13 +424,11 @@ class MayaActions(HookBaseClass):
             config = "UDIM"
         except ValueError, e:
             config = "Texture"
-
         file_nodes = []
         if config == "UDIM":
             for image_file in full_file_name:
                 if re.match(".+(1001\.[a-z].+)", image_file):
                     file_nodes.append(self._create_udim_texture_node(image_file,sg_publish_data))
-
         elif config == "Texture":
             for image_file in full_file_name:
                 file_nodes.append(self._create_texture_node_func(image_file,sg_publish_data))
@@ -453,6 +500,11 @@ class MayaActions(HookBaseClass):
             if major_version_number_str and major_version_number_str.isdigit():
                 self._maya_major_version = int(major_version_number_str)
         return self._maya_major_version
+
+    def _load_render_setting(self,preset_name,path):
+        from __Maya.lighting._self import renderSettingManage
+        reload(renderSettingManage)
+        renderSettingManage.load_render_setting(preset_name, path)
 
 
 # def _hookup_shaders(reference_node):
@@ -552,78 +604,84 @@ def _hookup_xgen(path):
 
     except Exception, e:
         raise Exception(e)
-    path = replaceSpecialCharacter(path)
+    from func import cfaXgenAPI
+    from func import replace_special_character as rsc
+    from cfa_widgets import CFAUI
+    from cfa_widgets import *
+    import shutil
+    work_file = cmds.file(q=True, sn=True)
+    if not work_file:
+        CFAUI.messageBox("Please save the file first!")
+        return
+    current_dir = os.path.dirname(work_file)
+    # all_files = os.listdir(current_dir)
+    # if "xgen" in all_files:
+    #     shutil.rmtree(current_dir + "/xgen")
+    basename = os.path.basename(path)
+    collection = (basename.split('__')[-1]).split('.')[0]
+    collection_path = current_dir + "/xgen/collections/" +collection
+    if os.path.isdir(collection_path):
+        ret = CFAUI.warningBox("---%s--- already exists in \n\t Will you delete it and continue?" % (collection_path))
+        if ret == QMessageBox.Ok:
+            shutil.rmtree(collection_path)
+        else:
+            return False
+    path = rsc.replaceSpecialCharacter(path)
     print "xgen-path:", path
     validator = xif.Validator(xg.ADD_TO_NEW_PALETTE, None)
-    xg.importBindPalette(str(path), '', validator, True)
-def _hookup_sim_crv(path):
+    cfaXgenAPI.importBindPalette(str(path), '', validator, True)
+
+    palettes = xg.palettes()
+    for palette in palettes:
+        descriptions = list(xg.descriptions(str(palette)))
+        try:
+            mel.eval('xgmDensityComp -f -pb {"%s"};' % descriptions[-1])
+        except:
+            pass
+    return True
+def _hookup_simcrv(path):
     try:
         import xgenm as xg
         import xgenm.xgGlobal as xgg
     except Exception, e:
         raise Exception(e)
-    path = str(replaceSpecialCharacter(path))
+    from func import replace_special_character as rsc
+    path = str(rsc.replaceSpecialCharacter(path))
     basename = os.path.basename(path)
     _SIMCRV = "_SIMCRV"
 
-    if re.search(_SIMCRV,basename):
-        description = str(basename.split(_SIMCRV)[0])
-        palette = str(xg.palette(description))
+    description = str(basename.split(_SIMCRV)[0])
+    palette = str(xg.palette(description))
+    _object_type = str(xg.objects(palette, description)[2])
+    de = xgg.DescriptionEditor
+    # use cache
+    xg.setAttr(
+        str("useCache"),
+        str("1"),
+        palette,
+        description,
+        _object_type
+    )
+    # live mode :0
+    xg.setAttr(
+        str("liveMode"),
+        str("0"),
+        palette,
+        description,
+        _object_type
+    )
+    xg.setAttr(
+        str("cacheFileName"),
+        path,
+        palette,
+        description,
+        _object_type
+    )
 
-        # folder, name = os.path.split(cmds.file(q=True, sn=True))
-        # cache_folder = folder + "/cache/alembic"
-        # cache_files = os.listdir(cache_folder)
-        # cache_files.sort(key=lambda fn: os.path.getmtime(os.path.join(cache_folder, fn)))
-        # cache_file = os.listdir(os.path.join(cache_folder, cache_files[-1]))
-        # cache_file = os.path.join(cache_folder, cache_files[-1])
-        _object_type = str(xg.objects(palette, description)[2])
-        de = xgg.DescriptionEditor
-        # use cache
-        xg.setAttr(
-            str("useCache"),
-            str("1"),
-            palette,
-            description,
-            _object_type
-        )
-        # live mode :0
-        xg.setAttr(
-            str("liveMode"),
-            str("0"),
-            palette,
-            description,
-            _object_type
-        )
-        xg.setAttr(
-            str("cacheFileName"),
-            path,
-            palette,
-            description,
-            _object_type
-        )
-
-        de.update()
-        return True
-    else:
-        return False
-
-
-
-def replaceSpecialCharacter(strings):
-    if "\a" in strings:
-        strings = strings.replace("\a", "/a")
-    if "\b" in strings:
-        strings = strings.replace("\b", "/b")
-    if "\e" in strings:
-        strings = strings.replace("\e", "/e")
-    if "\n" in strings:
-        strings = strings.replace("\n", "/n")
-    if "\v" in strings:
-        strings = strings.replace("\v", "/v")
-    if "\r" in strings:
-        strings = strings.replace("\r", "/r")
-    if "\t" in strings:
-        strings = strings.replace("\t", "/t")
-    if "\f" in strings:
-        strings = strings.replace("\f", "/f")
-    return strings.replace("\\","/")
+    de.update()
+def update_scene_time():
+    from func import shotgun_func
+    shotgun_func.update_scene_time()
+def update_resolution():
+    from __Maya.common import maya_func
+    maya_func.setResolution()

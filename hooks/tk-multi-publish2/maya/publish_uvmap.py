@@ -269,7 +269,7 @@ class MayaUVMapPublishPlugin(HookBaseClass):
         work_fields = work_template.get_fields(path)
 
         # include the camera name in the fields
-        work_fields["specialname"] = uvmap_file_name
+        work_fields["unmap_name"] = uvmap_file_name
 
         # ensure the fields work for the publish template
         missing_keys = publish_template.missing_keys(work_fields)
@@ -336,8 +336,13 @@ class MayaUVMapPublishPlugin(HookBaseClass):
         #     if "\t" in publish_path:
         #         temp_path = publish_path.replace('\t', '/t')
         #         uvmap_path = temp_path.replace(os.path.sep, '/')
-
-        publish_path = replaceSpecialCharacter(publish_path)
+        current_dir = os.path.dirname(__file__)
+        _hooks = os.path.dirname(os.path.dirname(current_dir))
+        import sys
+        if _hooks not in sys.path:
+            sys.path.append(_hooks)
+        from func import replace_special_character as rsc
+        publish_path = rsc.replaceSpecialCharacter(publish_path)
         self.logger.info("A Publish will be created in Shotgun and linked to:")
         self.logger.info("  %s" % (publish_path))
         _format = "tif"
@@ -347,26 +352,6 @@ class MayaUVMapPublishPlugin(HookBaseClass):
 
         # Now that the path has been generated, hand it off to the
         super(MayaUVMapPublishPlugin, self).publish(settings, item)
-
-
-def replaceSpecialCharacter(strings):
-    if "\a" in strings:
-        strings = strings.replace("\a", "/a")
-    if "\b" in strings:
-        strings = strings.replace("\b", "/b")
-    if "\e" in strings:
-        strings = strings.replace("\e", "/e")
-    if "\n" in strings:
-        strings = strings.replace("\n", "/n")
-    if "\v" in strings:
-        strings = strings.replace("\v", "/v")
-    if "\r" in strings:
-        strings = strings.replace("\r", "/r")
-    if "\t" in strings:
-        strings = strings.replace("\t", "/t")
-    if "\f" in strings:
-        strings = strings.replace("\f", "/f")
-    return strings.replace("\\","/")
 
 
 def _session_path():

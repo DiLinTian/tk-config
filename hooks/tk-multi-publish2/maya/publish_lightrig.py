@@ -47,48 +47,6 @@ class MayaCameraPublishPlugin(HookBaseClass):
 
     @property
     def settings(self):
-        """
-        A :class:`dict` defining the configuration interface for this plugin.
-
-        The dictionary can include any number of settings required by the
-        plugin, and takes the form::
-
-            {
-                <setting_name>: {
-                    "type": <type>,
-                    "default": <default>,
-                    "description": <description>
-                },
-                <setting_name>: {
-                    "type": <type>,
-                    "default": <default>,
-                    "description": <description>
-                },
-                ...
-            }
-
-        The keys in the dictionary represent the names of the settings. The
-        values are a dictionary comprised of 3 additional key/value pairs.
-
-        * ``type``: The type of the setting. This should correspond to one of
-          the data types that toolkit accepts for app and engine settings such
-          as ``hook``, ``template``, ``string``, etc.
-        * ``default``: The default value for the settings. This can be ``None``.
-        * ``description``: A description of the setting as a string.
-
-        The values configured for the plugin will be supplied via settings
-        parameter in the :meth:`accept`, :meth:`validate`, :meth:`publish`, and
-        :meth:`finalize` methods.
-
-        The values also drive the custom UI defined by the plugin whick allows
-        artists to manipulate the settings at runtime. See the
-        :meth:`create_settings_widget`, :meth:`set_ui_settings`, and
-        :meth:`get_ui_settings` for additional information.
-
-        .. note:: See the hooks defined in the publisher app's ``hooks/`` folder
-           for additional example implementations.
-        """
-        # inherit the settings from the base publish plugin
         plugin_settings = super(MayaCameraPublishPlugin, self).settings or {}
 
         # settings specific to this class
@@ -132,7 +90,7 @@ class MayaCameraPublishPlugin(HookBaseClass):
         Strings can contain glob patters such as ``*``, for example ``["maya.*",
         "file.maya"]``.
         """
-        return ["maya.session.camera"]
+        return ["maya.session.lightrig"]
 
     def accept(self, settings, item):
         """
@@ -186,31 +144,13 @@ class MayaCameraPublishPlugin(HookBaseClass):
         publisher = self.parent
         template_name = settings["Publish Template"].value
 
-        # validate the camera name first
-        cam_name = item.properties.get("camera_name")
-        cam_shape = item.properties.get("camera_shape")
 
-        if cam_name and cam_shape:
-            if not self._cam_name_matches_settings(cam_name, settings):
-                self.logger.debug(
-                    "Camera name %s does not match any of the configured "
-                    "patterns for camera names to publish. Not accepting "
-                    "session camera item." % (cam_name,)
-                )
-                return {"accepted": False}
-        else:
-            self.logger.debug(
-                "Camera name or shape was set on the item properties. Not "
-                "accepting session camera item."
-            )
-            return {"accepted": False}
-
-        # ensure a camera file template is available on the parent item
+        # ensure a lightRig file template is available on the parent item
         work_template = item.parent.properties.get("work_template")
         if not work_template:
             self.logger.debug(
                 "A work template is required for the session item in order to "
-                "publish a camera. Not accepting session camera item."
+                "publish a lightRig. Not accepting session lightRig item."
             )
             return {"accepted": False}
 
@@ -225,19 +165,11 @@ class MayaCameraPublishPlugin(HookBaseClass):
         else:
             self.logger.debug(
                 "The valid publish template could not be determined for the "
-                "session camera item. Not accepting the item."
+                "session lightRig item. Not accepting the item."
             )
             return {"accepted": False}
 
-        # check that the FBXExport command is available!
-        # if not mel.eval("exists \"FBXExport\""):
-        #     self.logger.debug(
-        #         "Item not accepted because fbx export command 'FBXExport' "
-        #         "is not available. Perhaps the plugin is not enabled?"
-        #     )
-        #     return {"accepted": False}
 
-        # all good!
         return {
             "accepted": True,
             "checked": True
@@ -263,9 +195,11 @@ class MayaCameraPublishPlugin(HookBaseClass):
 
         :returns: True if item is valid, False otherwise.
         """
+
         path = _session_path()
-        publisher = self.parent
-        print 'tk:', publisher.sgtk
+        context = item.context
+        _name = context.entity.get('name')
+        _name = _name.replace('_','')
         # ---- ensure the session has been saved
 
         if not path:
@@ -281,15 +215,13 @@ class MayaCameraPublishPlugin(HookBaseClass):
         # get the normalized path
         path = sgtk.util.ShotgunPath.normalize(path)
 
-        cam_name = item.properties["camera_name"]
+        lightRig = item.properties["lightRig"]
 
         # check that the camera still exists in the file
-        if not cmds.ls(cam_name):
+        if not cmds.ls(lightRig):
             error_msg = (
-                "Validation failed because the collected camera (%s) is no "
-                "longer in the scene. You can uncheck this plugin or create "
-                "a camera with this name to export to avoid this error." %
-                (cam_name,)
+                "Validation failed because the collected lightRig (%s) is no "
+                "longer in the scene." %(lightRig)
             )
             self.logger.error(error_msg)
             raise Exception(error_msg)
@@ -301,10 +233,9 @@ class MayaCameraPublishPlugin(HookBaseClass):
         # get the current scene path and extract fields from it using the work
         # template:
         work_fields = work_template.get_fields(path)
-
-        # include the camera name in the fields
-        # work_fields["name"] = cam_name
-        work_fields["camera_name"] = cam_name
+        light_category = lightRig.split('_')[-1]
+        # reset name field
+        work_fields["name"] = _name + (light_category.capitalize())
 
         # ensure the fields work for the publish template
         missing_keys = publish_template.missing_keys(work_fields)
@@ -329,129 +260,40 @@ class MayaCameraPublishPlugin(HookBaseClass):
         return super(MayaCameraPublishPlugin, self).validate(settings, item)
 
     def publish(self, settings, item):
-        """
-        Executes the publish logic for the given item and settings.
 
-        Any raised exceptions will indicate that the publish pass has failed and
-        the publisher will stop execution.
-
-        :param dict settings: The keys are strings, matching the keys returned
-            in the :data:`settings` property. The values are
-            :class:`~.processing.Setting` instances.
-        :param item: The :class:`~.processing.Item` instance to validate.
-        """
-
-        # keep track of everything currently selected. we will restore at the
-        # end of the publish method
-        
-        cur_selection = cmds.ls(selection=True)
-
-        # the camera to publish
-        cam_shape = item.properties["camera_shape"]
-
-        # make sure it is selected
-        cmds.select(cam_shape)
+        publisher = self.parent
+        # self.logger.debug("ppcontext:----%s----" % item.context)
+        # self.logger.debug("pptask:----%s----" % item.context.task)
 
         # get the path to create and publish
-        publish_path = item.properties["publish_path"]
+        publish_path = item.properties["path"]
 
         # ensure the publish folder exists:
         publish_folder = os.path.dirname(publish_path)
-        self.parent.ensure_folder_exists(publish_folder)
-        
-        # get camera frame range
-        camera_name = item.properties['camera_name']
-        long_name = cmds.ls(camera_name, l=True)[0]
-        top_parent = long_name[1:].split("|")[0]
+        publisher.ensure_folder_exists(publish_folder)
+        lightRig = item.properties["lightRig"]
+
         try:
-            cmds.select(top_parent, r=True)
+            # self.logger.debug("Executing command: %s" % cam_export_cmd)
+            # mel.eval(cam_export_cmd)
+            cmds.select(lightRig, r=True)
             cmds.file(publish_path, force=True, options="v=0", typ="mayaAscii", pr=True, es=True)
         except Exception, e:
-            self.logger.error("Failed to export camera: %s" % e)
+            self.logger.error("Failed to export lightRig: %s" % e)
             return
-        # print cam_export_cmd
-        # set the publish type in the item's properties. the base plugin will
-        # use this when registering the file with Shotgun
-        # item.properties["publish_type"] = "FBX Camera"
-        
-        # item.properties["publish_type"] = "ABC Camera"
-        item.properties["publish_type"] = "MAYA Camera"
+
+        item.properties["publish_type"] = "MAYA LightRig"
+
+        # ------------export preset---------
+        from __Maya.lighting._self import renderSettingManage
+        dir,name = os.path.split(publish_path)
+        preset_name = name.split(".")[0]
+        renderSettingManage.export_render_setting(preset_name,dir)
 
         # Now that the path has been generated, hand it off to the
         super(MayaCameraPublishPlugin, self).publish(settings, item)
-        # publish abc camera
-        #self.publish_abc_camera(settings,item)
+
         # restore selection
-        cmds.select(cur_selection)
-    def publish_abc_camera(self,settings, item):
-
-        # the camera to publish
-        cam_shape = item.properties["camera_shape"]
-
-        # make sure it is selected
-        cmds.select(cam_shape)
-
-        # get the path to create and publish
-        publish_path = item.properties["publish_path"]
-
-        # ensure the publish folder exists:
-        publish_folder = os.path.dirname(publish_path)
-        self.parent.ensure_folder_exists(publish_folder)
-
-        # get camera frame range
-        camera_name = item.properties['camera_name']
-        # long_name = cmds.ls(camera_name, l=True)[0]
-        # top_parent = long_name[1:].split("|")[0]
-        min,max = _find_scene_animation_range()
-        # fbx_export_cmd = 'FBXExport -f "%s" -s' % (publish_path.replace(os.path.sep, "/"),)
-        # print "publish path:",publish_path.replace(os.path.sep, "/")
-        from func import replace_special_character as rsc
-        from __Maya.animation import exportAbcCamera
-        reload(exportAbcCamera)
-        camera_path = rsc.replaceSpecialCharacter(publish_path)
-        camera_path = os.path.splitext(camera_path)[0] + '.abc'
-        publish_camera = exportAbcCamera.copyBakeCamera(camera_name)
-        cam_export_cmd = 'AbcExport -j "-frameRange {min} {max} -dataFormat ogawa -root {name} -file {file}";'.format(
-            min=min,
-            max=max,
-            name=publish_camera,
-            file=camera_path
-        )
-
-        # ...and execute it:
-        try:
-            self.logger.debug("Executing command: %s" % cam_export_cmd)
-            mel.eval(cam_export_cmd)
-            cmds.delete(publish_camera)
-        except Exception, e:
-            self.logger.error("Failed to export camera: %s" % e)
-            return
-
-        item.properties["publish_type"] = "ABC Camera"
-        # item.properties["publish_type"] = "MAYA Camera"
-
-        # Now that the path has been generated, hand it off to the
-        super(MayaCameraPublishPlugin, self).publish(settings, item)
-
-    def _cam_name_matches_settings(self, cam_name, settings):
-        """
-        Returns True if the supplied camera name matches any of the configured
-        camera name patterns.
-        """
-
-        # loop through each pattern specified and see if the supplied camera
-        # name matches the pattern
-        cam_patterns = settings["Cameras"].value
-
-        # if no patterns specified, then no constraints on camera name
-        if not cam_patterns:
-            return True
-
-        for camera_pattern in cam_patterns:
-            if fnmatch.fnmatch(cam_name, camera_pattern):
-                return True
-
-        return False
 
 
 def _session_path():
